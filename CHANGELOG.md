@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/Tyka95/kube-kit/compare/v0.1.0...v0.1.1) (2026-03-23)
+
+
+### Features
+
+* initial release of KubeKit ([1b07392](https://github.com/Tyka95/kube-kit/commit/1b07392392ad1819d32639a83380b79a0f63f0fe))
+
 ## [0.1.0](https://github.com/Tyka95/kube-kit/commits/main) (2026-03-23)
 
 ### Features
