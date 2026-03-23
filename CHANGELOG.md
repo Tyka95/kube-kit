@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.4](https://github.com/Tyka95/kube-kit/compare/v0.1.3...v0.1.4) (2026-03-23)
+
+
+### Bug Fixes
+
+* trigger homebrew update only on published event ([bc88b3b](https://github.com/Tyka95/kube-kit/commit/bc88b3b343d1b8bfc5ba728113918588bf805fc0))
+
 ## [0.1.3](https://github.com/Tyka95/kube-kit/compare/v0.1.2...v0.1.3) (2026-03-23)
 
 
