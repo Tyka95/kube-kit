@@ -1,0 +1,31 @@
+name: Update Homebrew Tap
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  update-tap:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update formula
+        uses: actions/checkout@v4
+        with:
+          repository: Tyka95/homebrew-kube-kit
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Set version from release tag
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - name: Update formula version
+        run: |
+          sed -i "s|url .*|url \"https://github.com/Tyka95/kube-kit.git\", tag: \"$GITHUB_REF_NAME\"|" Formula/kubekit.rb
+          sed -i "s|version .*|version \"$VERSION\"|" Formula/kubekit.rb
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/kubekit.rb
+          git commit -m "chore: bump kubekit to $VERSION"
+          git push
