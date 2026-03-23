@@ -2,24 +2,32 @@ name: Update Homebrew Tap
 
 on:
   release:
-    types: [published]
+    types: [published, released]
+  workflow_dispatch:
 
 jobs:
   update-tap:
     runs-on: ubuntu-latest
     steps:
-      - name: Update formula
+      - name: Get version
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            TAG="${{ github.event.release.tag_name }}"
+          else
+            TAG=$(curl -s https://api.github.com/repos/Tyka95/kube-kit/releases/latest | jq -r .tag_name)
+          fi
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          echo "VERSION=${TAG#v}" >> "$GITHUB_ENV"
+
+      - name: Checkout tap repo
         uses: actions/checkout@v4
         with:
           repository: Tyka95/homebrew-kube-kit
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
 
-      - name: Set version from release tag
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
-
       - name: Update formula version
         run: |
-          sed -i "s|url .*|url \"https://github.com/Tyka95/kube-kit.git\", tag: \"$GITHUB_REF_NAME\"|" Formula/kubekit.rb
+          sed -i "s|url .*|url \"https://github.com/Tyka95/kube-kit.git\", tag: \"$TAG\"|" Formula/kubekit.rb
           sed -i "s|version .*|version \"$VERSION\"|" Formula/kubekit.rb
 
       - name: Commit and push
@@ -27,5 +35,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Formula/kubekit.rb
+          git diff --cached --quiet && echo "No changes" && exit 0
           git commit -m "chore: bump kubekit to $VERSION"
           git push
