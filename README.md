@@ -15,7 +15,7 @@ A terminal UI toolkit for Kubernetes and AWS workflows. Navigate clusters, manag
 
 ## Install
 
-### Homebrew (coming soon)
+### Homebrew
 
 ```bash
 brew tap Tyka95/kube-kit
