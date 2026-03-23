@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3](https://github.com/Tyka95/kube-kit/compare/v0.1.2...v0.1.3) (2026-03-23)
+
+
+### Bug Fixes
+
+* use PAT for release-please to trigger downstream workflows ([28215df](https://github.com/Tyka95/kube-kit/commit/28215df585d2e78ce09e32695f5af1b55bcf78c2))
+
 ## [0.1.2](https://github.com/Tyka95/kube-kit/compare/v0.1.1...v0.1.2) (2026-03-23)
 
 
