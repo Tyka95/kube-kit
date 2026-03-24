@@ -48,6 +48,9 @@ _footer_bar() {
   printf ' %s' "$_ftr"
 }
 
+_WINCH_FLAG=0
+trap '_WINCH_FLAG=1' WINCH
+
 draw_chrome() {
   _refresh_ctx
   _refresh_term_size
@@ -111,7 +114,10 @@ choose_menu() {
   done
 
   local sel=0
-  local visible=$((count < 14 ? count : 14))
+  _refresh_term_size
+  local max_visible=$((TERM_H - 8))  # header(1) + blank(1) + title(1) + blank(1) + hints(2) + footer(2)
+  ((max_visible < 3)) && max_visible=3
+  local visible=$((count < max_visible ? count : max_visible))
   local scroll=0
 
   printf '\033[?25l' >&3
@@ -222,6 +228,15 @@ choose_menu() {
   }
 
   while true; do
+    if ((_WINCH_FLAG)); then
+      _WINCH_FLAG=0
+      _refresh_term_size
+      max_visible=$((TERM_H - 8))
+      ((max_visible < 3)) && max_visible=3
+      visible=$((count < max_visible ? count : max_visible))
+      draw_chrome
+      _draw
+    fi
     if ! _readkey; then
       _tick || true
       continue
