@@ -126,76 +126,80 @@ choose_menu() {
     ((sel < scroll)) && scroll=$sel
     ((sel >= scroll + visible)) && scroll=$((sel - visible + 1))
 
-    {
-      # Content starts at row 2 (after 1-line header)
-      printf '\033[2;1H'
+    # Build entire screen into a buffer, then write atomically
+    local buf=""
 
-      # Breadcrumb + spinner position
-      printf '\033[K\n'
-      if [[ -n "$BREADCRUMB" ]]; then
-        local _title_text="  ⎈  ${BREADCRUMB} › ${title} "
-        printf '\033[K  %s⎈  %s%s › %s%s %s\n' "$C_DIM" "$BREADCRUMB" "$C_RESET" "$C_CYAN_B" "$title" "$C_RESET"
-      else
-        local _title_text="  ⎈  ${title} "
-        printf '\033[K  %s⎈  %s %s\n' "$C_CYAN_B" "$title" "$C_RESET"
-      fi
-      SPINNER_ROW=3
-      SPINNER_COL=$((${#_title_text} + 1))
-      printf '\033[K\n'
+    # Content starts at row 2 (after 1-line header)
+    buf+='\033[2;1H'
 
-      # Items — also store text+rows for shimmer
-      SHIMMER_TEXTS=()
-      SHIMMER_ROWS=()
-      SHIMMER_SEL_IDX=-1
-      SHIMMER_POS=-1
-      SHIMMER_WAIT=0
-      SHIMMER_DIR=1
-      for ((i = 0; i < visible; i++)); do
-        local idx=$((scroll + i))
-        local item_row=$((5 + i))
-        local full_line=""
-        printf '\033[K'
-        if ((idx == sel)); then
-          full_line="   ❯ ${labels[$idx]}"
-          local _desc_start=${#full_line}
-          [[ -n "${descs[$idx]}" ]] && full_line+="  ${descs[$idx]}"
-          printf '  %s ❯ %s%s' "$C_WHITE_B" "${labels[$idx]}" "$C_RESET"
-          if [[ -n "${descs[$idx]}" ]]; then
-            printf '  %s%s%s' "$C_LCYAN" "${descs[$idx]}" "$C_RESET"
-          fi
-          printf '\n'
-          SHIMMER_SEL_IDX=$i
-          SHIMMER_DESC_START=$_desc_start
-        else
-          full_line="     ${labels[$idx]}"
-          [[ -n "${descs[$idx]}" ]] && full_line+="  ${descs[$idx]}"
-          printf '  %s   %s%s' "$C_DIM" "${labels[$idx]}" "$C_RESET"
-          if [[ -n "${descs[$idx]}" ]]; then
-            printf '  %s%s%s' "$C_DIM" "${descs[$idx]}" "$C_RESET"
-          fi
-          printf '\n'
+    # Breadcrumb + spinner position
+    buf+='\033[K\n'
+    if [[ -n "$BREADCRUMB" ]]; then
+      local _title_text="  ⎈  ${BREADCRUMB} › ${title} "
+      buf+="$(printf '\033[K  %s⎈  %s%s › %s%s %s\n' "$C_DIM" "$BREADCRUMB" "$C_RESET" "$C_CYAN_B" "$title" "$C_RESET")"
+    else
+      local _title_text="  ⎈  ${title} "
+      buf+="$(printf '\033[K  %s⎈  %s %s\n' "$C_CYAN_B" "$title" "$C_RESET")"
+    fi
+    SPINNER_ROW=3
+    SPINNER_COL=$((${#_title_text} + 1))
+    buf+='\033[K\n'
+
+    # Items — also store text+rows for shimmer
+    SHIMMER_TEXTS=()
+    SHIMMER_ROWS=()
+    SHIMMER_SEL_IDX=-1
+    SHIMMER_POS=-1
+    SHIMMER_WAIT=0
+    SHIMMER_DIR=1
+    for ((i = 0; i < visible; i++)); do
+      local idx=$((scroll + i))
+      local item_row=$((5 + i))
+      local full_line=""
+      buf+='\033[K'
+      if ((idx == sel)); then
+        full_line="   ❯ ${labels[$idx]}"
+        local _desc_start=${#full_line}
+        [[ -n "${descs[$idx]}" ]] && full_line+="  ${descs[$idx]}"
+        buf+="$(printf '  %s ❯ %s%s' "$C_WHITE_B" "${labels[$idx]}" "$C_RESET")"
+        if [[ -n "${descs[$idx]}" ]]; then
+          buf+="$(printf '  %s%s%s' "$C_LCYAN" "${descs[$idx]}" "$C_RESET")"
         fi
-        SHIMMER_TEXTS+=("$full_line")
-        SHIMMER_ROWS+=("$item_row")
-      done
+        buf+=$'\n'
+        SHIMMER_SEL_IDX=$i
+        SHIMMER_DESC_START=$_desc_start
+      else
+        full_line="     ${labels[$idx]}"
+        [[ -n "${descs[$idx]}" ]] && full_line+="  ${descs[$idx]}"
+        buf+="$(printf '  %s   %s%s' "$C_DIM" "${labels[$idx]}" "$C_RESET")"
+        if [[ -n "${descs[$idx]}" ]]; then
+          buf+="$(printf '  %s%s%s' "$C_DIM" "${descs[$idx]}" "$C_RESET")"
+        fi
+        buf+=$'\n'
+      fi
+      SHIMMER_TEXTS+=("$full_line")
+      SHIMMER_ROWS+=("$item_row")
+    done
 
-      # Clear any leftover lines between menu and hint bar
-      local hint_row=$((5 + visible))
-      local r
-      for ((r = hint_row; r <= TERM_H - 2; r++)); do
-        printf '\033[%d;1H\033[2K' "$r"
-      done
+    # Clear any leftover lines between menu and hint bar
+    local hint_row=$((5 + visible))
+    local r
+    for ((r = hint_row; r <= TERM_H - 2; r++)); do
+      buf+="$(printf '\033[%d;1H\033[2K' "$r")"
+    done
 
-      # Hint bar
-      printf '\033[%d;1H' "$hint_row"
-      printf '\033[K\n'
-      printf '\033[K  %s↑↓%s navigate  %s→%s select  %s←/esc%s back  %sc%s clear  %sq%s quit\n' \
-        "$C_LCYAN" "$C_DIM" "$C_LCYAN" "$C_DIM" "$C_LCYAN" "$C_DIM" "$C_LCYAN" "$C_DIM" "$C_LCYAN" "$C_RESET"
+    # Hint bar
+    buf+="$(printf '\033[%d;1H' "$hint_row")"
+    buf+='\033[K\n'
+    buf+="$(printf '\033[K  %s↑↓%s navigate  %s→%s select  %s←/esc%s back  %sc%s clear  %sq%s quit\n' \
+      "$C_LCYAN" "$C_DIM" "$C_LCYAN" "$C_DIM" "$C_LCYAN" "$C_DIM" "$C_LCYAN" "$C_DIM" "$C_LCYAN" "$C_RESET")"
 
-      # Footer pinned at bottom
-      printf '\033[%d;1H' "$((TERM_H - 1))"
-      _footer_bar
-    } >&3
+    # Footer pinned at bottom
+    buf+="$(printf '\033[%d;1H' "$((TERM_H - 1))")"
+    buf+="$(_footer_bar)"
+
+    # Single atomic write
+    printf '%b' "$buf" >&3
   }
 
   _draw
@@ -206,47 +210,62 @@ choose_menu() {
   stty -echo -icanon min 0 time 1 </dev/tty 2>/dev/null || true
   trap 'SPINNER_ROW=0; SHIMMER_SEL_IDX=-1; stty "$_old_stty" </dev/tty 2>/dev/null; printf "\033[?25h" >&3' RETURN
 
-  # _readkey: read up to 4 bytes from tty, return as hex string in _HEX.
-  # Reads all available bytes in a single perl call to avoid escape sequence splitting.
-  # Returns 1 on timeout (no input).
+  # _readkey: use bash read (interruptible by SIGWINCH) instead of Perl
   _readkey() {
-    _HEX=$(perl -e '
-      use POSIX qw(tcgetattr tcsetattr TCSANOW);
-      open(my $tty, "<", "/dev/tty") or exit 1;
-      my $fd = fileno($tty);
-      my $old = POSIX::Termios->new; $old->getattr($fd);
-      my $raw = POSIX::Termios->new; $raw->getattr($fd);
-      $raw->setcc(POSIX::VMIN, 0);
-      $raw->setcc(POSIX::VTIME, 1);  # 0.1s timeout
-      $raw->setattr($fd, TCSANOW);
-      my $buf = "";
-      my $n = sysread($tty, $buf, 1);
-      if (defined $n && $n > 0) {
-        # Got first byte; try to read more (for escape sequences)
-        if (ord($buf) == 0x1b) {
-          my $more;
-          my $n2 = sysread($tty, $more, 3);
-          $buf .= $more if defined $n2 && $n2 > 0;
-        }
-        printf "%s", join("", map { sprintf("%02x", ord($_)) } split(//, $buf));
-      }
-      $old->setattr($fd, TCSANOW);
-    ' 2>/dev/null) || true
-    [[ -n "$_HEX" ]]
+    _HEX=""
+    local char
+    # read with 0.1s timeout — interrupted immediately by signals
+    if ! IFS= read -rsn1 -t 0.1 char </dev/tty 2>/dev/null; then
+      return 1
+    fi
+
+    # Empty string from read = Enter key (newline was consumed)
+    if [[ -z "$char" ]]; then
+      _HEX="0a"
+      return 0
+    fi
+
+    _HEX=$(printf '%02x' "'$char")
+
+    # If escape byte, read more for escape sequences
+    if [[ "$_HEX" == "1b" ]]; then
+      local seq=""
+      local c
+      IFS= read -rsn1 -t 0.01 c </dev/tty 2>/dev/null && seq+="$c"
+      IFS= read -rsn1 -t 0.01 c </dev/tty 2>/dev/null && seq+="$c"
+      IFS= read -rsn1 -t 0.01 c </dev/tty 2>/dev/null && seq+="$c"
+      local j
+      for ((j=0; j<${#seq}; j++)); do
+        _HEX+=$(printf '%02x' "'${seq:$j:1}")
+      done
+    fi
+
+    return 0
   }
 
   while true; do
     if ((_WINCH_FLAG)); then
-      _WINCH_FLAG=0
+      # Debounce: wait for resize to settle
+      while ((_WINCH_FLAG)); do
+        _WINCH_FLAG=0
+        sleep 0.15
+      done
+
+      # Invalidate animation state to prevent stale-position writes
+      SPINNER_ROW=0
+      SHIMMER_SEL_IDX=-1
+      SHIMMER_TEXTS=()
+      SHIMMER_ROWS=()
+
       _refresh_term_size
       max_visible=$((TERM_H - 8))
       ((max_visible < 3)) && max_visible=3
       visible=$((count < max_visible ? count : max_visible))
-      # Re-enter alt screen to force terminal to reset its line buffer
-      printf '\033[?1049l\033[?1049h\033[2J\033[H' >&3
+
+      # Clear and full redraw
+      printf '\033[2J\033[H' >&3
       _header_bar >&3
       _update_anim
-      _redraw_footer
       _draw
     fi
     if ! _readkey; then
