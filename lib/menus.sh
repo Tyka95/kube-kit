@@ -3,7 +3,7 @@
 run_menu() {
   local title="$1"; shift
   local prev_crumb="$BREADCRUMB"
-  BREADCRUMB="${BREADCRUMB:+$BREADCRUMB › }Main"
+  BREADCRUMB="${BREADCRUMB:+$BREADCRUMB › }$title"
 
   # Parse items: "Label:function" -> separate arrays
   local item_labels=() item_funcs=()
@@ -53,6 +53,7 @@ browse_namespaces()  { list_resource "Namespaces" namespaces; }
 browse_services()    { list_resource "Services" services; }
 browse_ingresses()   { list_resource "Ingresses" ingress; }
 browse_configmaps()  { list_resource "ConfigMaps" configmaps; }
+restart_pod()        { with_pod "Restart Pod" _restart_pod; }
 
 # ── Submenus ──────────────────────────────────────────────────────────────────
 
@@ -62,6 +63,7 @@ menu_pods() {
     "View Logs:view_logs" \
     "Open Shell:open_shell" \
     "Inspect Pod:inspect_pod" \
+    "Restart Pod:restart_pod" \
     "Port Forward:port_forward" \
     "Resource Usage:resource_usage"
 }

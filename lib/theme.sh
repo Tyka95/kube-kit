@@ -8,6 +8,7 @@ C_LBLUE=$'\033[38;5;117m'  # Light blue (256-color)
 C_GREEN=$'\033[32m'
 C_YELLOW=$'\033[33m'
 C_RED=$'\033[31m'
+C_GRAY=$'\033[38;5;245m'
 C_DIM=$'\033[2m'
 C_BOLD=$'\033[1m'
 C_RESET=$'\033[0m'

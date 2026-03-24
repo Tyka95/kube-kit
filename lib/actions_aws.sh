@@ -37,7 +37,12 @@ connect_cluster() {
   profile=$(pick_aws_profile) || return
   ensure_aws_session "$profile" || return
 
-  local regions=("eu-west-1" "eu-west-2" "us-east-1" "us-west-2")
+  local regions=()
+  if [[ ${#CFG_AWS_REGIONS[@]} -gt 0 ]]; then
+    regions=("${CFG_AWS_REGIONS[@]}")
+  else
+    regions=("eu-west-1" "eu-west-2" "us-east-1" "us-west-2")
+  fi
   local all_clusters=""
 
   dim "Scanning ${#regions[@]} regions for EKS clusters..."

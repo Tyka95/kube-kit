@@ -17,15 +17,15 @@ _update_anim() {
   local icon="${ANIM_ICONS[$icon_idx]}"
 
   printf '\033[s' >&3
-  # Clear icon area (2 cols) to avoid double-width character fragments
-  printf '\033[1;%dH  ' "$col" >&3
+  # Clear icon area (2 cols) on row 2 to avoid double-width character fragments
+  printf '\033[2;%dH  ' "$col" >&3
   local clr
   case $ANIM_PHASE in
     0) clr="$C_WHITE_B" ;;   # flash bright
     1) clr="$C_LCYAN" ;;     # bright cyan
     2) clr="$C_CYAN" ;;      # normal — hold longest
   esac
-  printf '\033[1;%dH%s%s%s' "$col" "$clr" "$icon" "$C_RESET" >&3
+  printf '\033[2;%dH%s%s%s' "$col" "$clr" "$icon" "$C_RESET" >&3
   printf '\033[u' >&3
 
   ANIM_PHASE=$(( (ANIM_PHASE + 1) % 3 ))
@@ -150,6 +150,35 @@ _update_spinner() {
   printf '\033[s' >&3
   printf '\033[%d;%dH%s%s%s' "$SPINNER_ROW" "$SPINNER_COL" "$C_LCYAN" "$frame" "$C_RESET" >&3
   printf '\033[u' >&3
+  return 0
+}
+
+# ── Selection flash ───────────────────────────────────────────────────────────
+# Quick bright-white → cyan → dim pulse on the selected item row
+
+_select_flash() {
+  local row="$1" text="$2"
+  local len=${#text}
+  ((len == 0)) && return 0
+
+  # Suppress other animations during flash
+  local _saved_spinner=$SPINNER_ROW _saved_shimmer=$SHIMMER_SEL_IDX
+  SPINNER_ROW=0; SHIMMER_SEL_IDX=-1
+
+  local colors=("$C_WHITE_B" "$C_LCYAN" "$C_CYAN" "$C_DIM")
+  local delays=(40 50 40 30)
+
+  local phase
+  for phase in 0 1 2 3; do
+    local clr="${colors[$phase]}"
+    printf '\033[s' >&3
+    printf '\033[%d;1H\033[2K' "$row" >&3
+    printf '  %s ❯ %s%s' "$clr" "$text" "$C_RESET" >&3
+    printf '\033[u' >&3
+    perl -e "select(undef,undef,undef,${delays[$phase]}/1000)" 2>/dev/null || sleep 0.05
+  done
+
+  SPINNER_ROW=$_saved_spinner; SHIMMER_SEL_IDX=$_saved_shimmer
   return 0
 }
 

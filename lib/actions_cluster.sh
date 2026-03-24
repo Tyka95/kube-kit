@@ -27,7 +27,9 @@ show_events() {
   header "Events in $ns (last 30)"
   show_cmd "kubectl get events -n $ns --sort-by='.lastTimestamp'"
   echo "" >&3
-  kubectl get events -n "$ns" --sort-by='.lastTimestamp' 2>/dev/null | tail -30 | colorize_k8s >&3
+  local _output
+  _output=$(kubectl get events -n "$ns" --sort-by='.lastTimestamp' 2>/dev/null | tail -30 | colorize_k8s)
+  paged_output "$_output"
   echo "" >&3
   divider
 }

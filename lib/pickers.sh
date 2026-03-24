@@ -21,6 +21,7 @@ pick_namespace() {
   else
     selected=$(echo "$items" | awk '{print $1}' | gum filter --placeholder "Type to search..." --header "  Namespace") || return 1
   fi
+  _save_state "last_namespace" "$selected"
   echo "$selected"
 }
 

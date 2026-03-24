@@ -8,10 +8,24 @@ db_forward() {
   header "Database Tunnel"
   ensure_kube_context || return
 
+  # Build target list from config + always offer custom
+  local _db_options=()
+  if [[ ${#CFG_DB_TARGETS[@]} -gt 0 ]]; then
+    for _dbt in "${CFG_DB_TARGETS[@]}"; do
+      _db_options+=("$_dbt")
+    done
+  else
+    _db_options+=("Staging Aurora (eu-west-1)|staging-rds-aurora-cluster.cluster-chm826uieyqw.eu-west-1.rds.amazonaws.com|5432")
+  fi
+  _db_options+=("Custom endpoint")
+
+  local _display_opts=()
+  for _dbt in "${_db_options[@]}"; do
+    _display_opts+=("${_dbt%%|*}")
+  done
+
   local target
-  target=$(gum choose --header "  Database target" \
-    "Staging Aurora (eu-west-1)" \
-    "Custom endpoint") || { _redraw_footer; return; }
+  target=$(printf '%s\n' "${_display_opts[@]}" | gum choose --header "  Database target") || { _redraw_footer; return; }
   clear_content
   header "Database Tunnel"
 
@@ -21,11 +35,20 @@ db_forward() {
   trap 'trap - INT' RETURN
 
   local db_host db_port
-  if [[ "$target" == "Staging"* ]]; then
-    db_host="staging-rds-aurora-cluster.cluster-chm826uieyqw.eu-west-1.rds.amazonaws.com"
-    db_port="5432"
-    dim "Target: $target"
-  else
+  # Look up selected target in options
+  local _matched=false
+  for _dbt in "${_db_options[@]}"; do
+    local _name="${_dbt%%|*}"
+    if [[ "$target" == "$_name" && "$_dbt" == *"|"* ]]; then
+      local _rest="${_dbt#*|}"
+      db_host="${_rest%%|*}"
+      db_port="${_rest#*|}"
+      dim "Target: $target"
+      _matched=true
+      break
+    fi
+  done
+  if ! $_matched; then
     drain_stdin
     printf '  %sHost%s %s(Ctrl+C to cancel)%s: ' "$C_CYAN_B" "$C_RESET" "$C_DIM" "$C_RESET" >&3
     read -r db_host < /dev/tty || true
@@ -44,8 +67,8 @@ db_forward() {
   $_db_cancelled && { echo "" >&3; return; }
   local_port="${local_port:-15432}"
 
-  if [[ ! "$local_port" =~ ^[0-9]+$ ]]; then
-    err "Invalid port number."
+  if ! _validate_port "$local_port"; then
+    err "Invalid port number (must be 1-65535)."
     return
   fi
 
@@ -112,7 +135,7 @@ _db_cleanup() {
   if [[ -n "$DB_PF_POD" ]]; then
     had_work=1
     # Position cursor in content area before printing cleanup messages
-    printf '\033[4;1H\033[J' >&3 2>/dev/null || true
+    printf '\033[5;1H\033[J' >&3 2>/dev/null || true
     dim "Cleaning up pod $DB_PF_POD..." || true
     kubectl delete pod "$DB_PF_POD" -n "${DB_PF_NS:-default}" --ignore-not-found 2>/dev/null || true
     ok "Deleted pod $DB_PF_POD." || true

@@ -74,12 +74,25 @@ _open_shell() {
   drain_stdin
 }
 
+_restart_pod() {
+  local ns="$1" pod="$2"
+  header "Restart: $pod"
+  gum confirm "  Delete pod $pod to trigger restart?" || { dim "Cancelled."; return; }
+  show_cmd "kubectl delete pod $pod -n $ns"
+  kubectl delete pod "$pod" -n "$ns" >&3
+  echo "" >&3
+  ok "Pod $pod deleted — controller will recreate it."
+  divider
+}
+
 _inspect_pod() {
   local ns="$1" pod="$2"
   header "Inspect: $pod"
   show_cmd "kubectl describe pod $pod -n $ns"
   echo "" >&3
-  kubectl describe pod "$pod" -n "$ns" | colorize_k8s >&3
+  local _output
+  _output=$(kubectl describe pod "$pod" -n "$ns" 2>/dev/null | colorize_k8s)
+  paged_output "$_output"
   echo "" >&3
   divider
 }

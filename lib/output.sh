@@ -33,6 +33,24 @@ drain_stdin() {
   return 0
 }
 
+# ── Paged output for long results ─────────────────────────────────────────────
+
+paged_output() {
+  local content="$1"
+  local lines
+  lines=$(echo "$content" | wc -l)
+  local max_lines=$((TERM_H - 6))
+  if ((lines > max_lines)); then
+    # Temporarily exit alt screen so less can work
+    printf '\033[?1049l' >&3
+    echo "$content" | less -R </dev/tty >/dev/tty
+    printf '\033[?1049h' >&3
+    draw_chrome
+  else
+    echo "$content" >&3
+  fi
+}
+
 # ── Color-coded kubectl output ────────────────────────────────────────────────
 
 colorize_k8s() {

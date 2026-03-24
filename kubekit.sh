@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="0.1.4" # x-release-please-version
+VERSION="0.1.5" # x-release-please-version
 
 # ── Version flag (handle before anything else) ────────────────────────────────
 case "${1:-}" in
@@ -33,6 +33,7 @@ done
 KUBE_LIB="$(cd "$(dirname "$_self")" && pwd)/lib"
 unset _self _dir
 
+source "$KUBE_LIB/config.sh"
 source "$KUBE_LIB/theme.sh"
 source "$KUBE_LIB/output.sh"
 source "$KUBE_LIB/context.sh"
@@ -52,6 +53,14 @@ source "$KUBE_LIB/menus.sh"
 
 main() {
   trap '_db_cleanup 2>/dev/null; _pf_cleanup 2>/dev/null; printf "\033[?1049l" >&3' EXIT
+
+  # Restore last namespace from state (or config default)
+  local _restored_ns
+  _restored_ns=$(_load_state "last_namespace") || true
+  [[ -z "$_restored_ns" ]] && _restored_ns="$CFG_DEFAULT_NS"
+  if [[ -n "$_restored_ns" ]]; then
+    kubectl config set-context --current --namespace="$_restored_ns" &>/dev/null || true
+  fi
 
   draw_chrome
 
