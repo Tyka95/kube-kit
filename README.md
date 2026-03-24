@@ -2,6 +2,8 @@
 
 A terminal UI toolkit for Kubernetes and AWS workflows. Navigate clusters, manage pods, forward database tunnels, and handle AWS SSO — all from an interactive menu.
 
+<img src="docs/screenshot.png" alt="KubeKit main menu" width="600">
+
 ## Features
 
 - **Pod Management** — list, logs, shell, inspect
