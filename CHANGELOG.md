@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.6](https://github.com/Tyka95/kube-kit/compare/v0.1.5...v0.1.6) (2026-03-24)
+
+
+### Features
+
+* Add config/state, paging, UI and UX tweaks ([27d30be](https://github.com/Tyka95/kube-kit/commit/27d30befdbaf0f158c987a0e94868b7cc09cacd2))
+
 ## [0.1.5](https://github.com/Tyka95/kube-kit/compare/v0.1.4...v0.1.5) (2026-03-24)
 
 
