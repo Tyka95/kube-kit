@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.7](https://github.com/Tyka95/kube-kit/compare/v0.1.6...v0.1.7) (2026-03-24)
+
+
+### Bug Fixes
+
+* improved aliases ([cffb91a](https://github.com/Tyka95/kube-kit/commit/cffb91afdead140e70be044970b45efed04ec201))
+
 ## [0.1.6](https://github.com/Tyka95/kube-kit/compare/v0.1.5...v0.1.6) (2026-03-24)
 
 
