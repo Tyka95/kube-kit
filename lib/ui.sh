@@ -179,7 +179,15 @@ choose_menu() {
         SHIMMER_ROWS+=("$item_row")
       done
 
+      # Clear any leftover lines between menu and hint bar
+      local hint_row=$((5 + visible))
+      local r
+      for ((r = hint_row; r <= TERM_H - 2; r++)); do
+        printf '\033[%d;1H\033[2K' "$r"
+      done
+
       # Hint bar
+      printf '\033[%d;1H' "$hint_row"
       printf '\033[K\n'
       printf '\033[K  %s↑↓%s navigate  %s→%s select  %s←/esc%s back  %sc%s clear  %sq%s quit\n' \
         "$C_LCYAN" "$C_DIM" "$C_LCYAN" "$C_DIM" "$C_LCYAN" "$C_DIM" "$C_LCYAN" "$C_DIM" "$C_LCYAN" "$C_RESET"
@@ -234,8 +242,8 @@ choose_menu() {
       max_visible=$((TERM_H - 8))
       ((max_visible < 3)) && max_visible=3
       visible=$((count < max_visible ? count : max_visible))
-      # Full reset: clear alt screen, erase all lines, redraw everything
-      printf '\033[2J\033[H' >&3
+      # Re-enter alt screen to force terminal to reset its line buffer
+      printf '\033[?1049l\033[?1049h\033[2J\033[H' >&3
       _header_bar >&3
       _update_anim
       _redraw_footer
