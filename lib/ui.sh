@@ -234,7 +234,11 @@ choose_menu() {
       max_visible=$((TERM_H - 8))
       ((max_visible < 3)) && max_visible=3
       visible=$((count < max_visible ? count : max_visible))
-      draw_chrome
+      # Full reset: clear alt screen, erase all lines, redraw everything
+      printf '\033[2J\033[H' >&3
+      _header_bar >&3
+      _update_anim
+      _redraw_footer
       _draw
     fi
     if ! _readkey; then
