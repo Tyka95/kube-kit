@@ -5,6 +5,9 @@
 TERM_W=80
 TERM_H=24
 
+# Resize detection — polling-based (bash 3.2 loses SIGWINCH during subshells)
+_WINCH_FLAG=0
+
 _refresh_term_size() {
   TERM_W=$(stty size </dev/tty 2>/dev/null | awk '{print $2}') || TERM_W=80
   TERM_H=$(stty size </dev/tty 2>/dev/null | awk '{print $1}') || TERM_H=24
@@ -52,8 +55,12 @@ draw_chrome() {
   _refresh_ctx
   _refresh_term_size
 
-  # Alt screen + clear + home
-  printf '\033[?1049h\033[2J\033[H' >&3
+  # Exit alt screen (if in it) then re-enter — guarantees a fresh buffer
+  # even after vertical resize reflows the old buffer contents
+  printf '\033[?1049l\033[?1049h\033[2J\033[H' >&3
+
+  # Hide cursor
+  printf '\033[?25l' >&3
 
   # Header (row 1 only)
   _header_bar >&3
@@ -111,7 +118,9 @@ choose_menu() {
   done
 
   local sel=0
-  local visible=$((count < 14 ? count : 14))
+  local max_visible=$((TERM_H - 8))
+  ((max_visible < 3)) && max_visible=3
+  local visible=$((count < max_visible ? count : max_visible))
   local scroll=0
 
   printf '\033[?25l' >&3
@@ -221,7 +230,35 @@ choose_menu() {
     [[ -n "$_HEX" ]]
   }
 
+  local _prev_w=$TERM_W _prev_h=$TERM_H
+
   while true; do
+    # Poll-based resize detection (every _readkey timeout = ~100ms)
+    _refresh_term_size
+    if ((TERM_W != _prev_w || TERM_H != _prev_h)); then
+      # Debounce: wait for resize to stop
+      local _stable=0
+      while ((_stable < 2)); do
+        sleep 0.15
+        local _w=$TERM_W _h=$TERM_H
+        _refresh_term_size
+        if ((TERM_W == _w && TERM_H == _h)); then
+          ((_stable++))
+        else
+          _stable=0
+        fi
+      done
+      _prev_w=$TERM_W; _prev_h=$TERM_H
+      # Invalidate animation state
+      SPINNER_ROW=0; SHIMMER_SEL_IDX=-1
+      SHIMMER_TEXTS=(); SHIMMER_ROWS=()
+      # Fresh alt screen buffer + recalculate layout
+      draw_chrome
+      max_visible=$((TERM_H - 8))
+      ((max_visible < 3)) && max_visible=3
+      visible=$((count < max_visible ? count : max_visible))
+      _draw
+    fi
     if ! _readkey; then
       _tick || true
       continue
