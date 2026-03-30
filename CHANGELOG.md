@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.8](https://github.com/Tyka95/kube-kit/compare/v0.1.7...v0.1.8) (2026-03-30)
+
+
+### Bug Fixes
+
+* addional UI improvements and stability ([1e844bf](https://github.com/Tyka95/kube-kit/commit/1e844bf66eae710fe8fd79cbf94d3aece60fb1ef))
+
 ## [0.1.7](https://github.com/Tyka95/kube-kit/compare/v0.1.6...v0.1.7) (2026-03-24)
 
 
