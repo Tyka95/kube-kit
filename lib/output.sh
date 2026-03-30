@@ -42,9 +42,9 @@ paged_output() {
   local max_lines=$((TERM_H - 6))
   if ((lines > max_lines)); then
     # Temporarily exit alt screen so less can work
-    printf '\033[?1049l' >&3
+    _exit_alt_screen
     echo "$content" | less -R </dev/tty >/dev/tty
-    printf '\033[?1049h' >&3
+    _enter_alt_screen
     draw_chrome
   else
     echo "$content" >&3

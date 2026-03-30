@@ -56,13 +56,20 @@ _footer_bar() {
   printf ' %s' "$_ftr"
 }
 
+_enter_alt_screen() {
+  printf '\033[?1049h' >&3
+}
+
+_exit_alt_screen() {
+  printf '\033[?1049l' >&3
+}
+
 draw_chrome() {
-  _refresh_ctx
+  _refresh_ctx || true
   _refresh_term_size
 
-  # Exit alt screen (if in it) then re-enter — guarantees a fresh buffer
-  # even after vertical resize reflows the old buffer contents
-  printf '\033[?1049l\033[?1049h\033[2J\033[H' >&3
+  # Clear screen and home cursor
+  printf '\033[2J\033[H' >&3
 
   # Hide cursor
   printf '\033[?25l' >&3
@@ -78,6 +85,13 @@ draw_chrome() {
 
   # Cursor to content area (row 3)
   printf '\033[3;1H' >&3
+}
+
+# Full reset for resize — toggle alt screen to flush iTerm2 reflow artifacts
+draw_chrome_reset() {
+  _exit_alt_screen
+  _enter_alt_screen
+  draw_chrome
 }
 
 # Redraw just the footer at the bottom of the screen
@@ -330,8 +344,8 @@ choose_menu() {
       # Invalidate animation state
       SPINNER_ROW=0; SHIMMER_SEL_IDX=-1
       SHIMMER_TEXTS=(); SHIMMER_ROWS=()
-      # Fresh alt screen buffer + recalculate layout
-      draw_chrome
+      # Fresh alt screen buffer + recalculate layout (full reset for iTerm2)
+      draw_chrome_reset
       max_visible=$((TERM_H - 9))
       ((max_visible < 3)) && max_visible=3
       visible=$((count < max_visible ? count : max_visible))

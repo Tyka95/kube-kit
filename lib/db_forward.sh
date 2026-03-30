@@ -3,10 +3,10 @@
 DB_PF_POD=""
 DB_PF_PID=""
 DB_PF_NS=""
+_DB_STOP=0
 
 db_forward() {
   header "Database Tunnel"
-  ensure_kube_context || return
 
   # Build target list from config + always offer custom
   local _db_options=()
@@ -110,37 +110,79 @@ db_forward() {
     divider
     warn "Press Ctrl+C to stop and clean up"
     _redraw_footer
-    # Wait for Ctrl+C — run cleanup inline in trap to guarantee it runs
-    trap '_db_cleanup; trap - INT' INT
-    while kill -0 "$DB_PF_PID" 2>/dev/null; do
-      perl -e 'select(undef,undef,undef,0.2)' 2>/dev/null || sleep 1 || true
+    # Suppress ^C echo during wait
+    local _old_stty
+    _old_stty=$(stty -g </dev/tty 2>/dev/null) || true
+    stty -echo -isig </dev/tty 2>/dev/null || true
+
+    _DB_STOP=0
+    while ((_DB_STOP == 0)) && kill -0 "$DB_PF_PID" 2>/dev/null; do
+      # Check for Ctrl+C input (0x03)
+      local _byte=""
+      _byte=$(perl -e '
+        use POSIX qw(tcgetattr tcsetattr TCSANOW);
+        open(my $tty, "<", "/dev/tty") or exit 1;
+        my $fd = fileno($tty);
+        my $old = POSIX::Termios->new; $old->getattr($fd);
+        my $raw = POSIX::Termios->new; $raw->getattr($fd);
+        $raw->setlflag($raw->getlflag & ~(POSIX::ECHO | POSIX::ICANON | POSIX::ISIG));
+        $raw->setcc(POSIX::VMIN, 0);
+        $raw->setcc(POSIX::VTIME, 2);  # 0.2s timeout
+        $raw->setattr($fd, TCSANOW);
+        my $buf;
+        my $n = sysread($tty, $buf, 1);
+        if (defined $n && $n > 0) {
+          printf "%02x", ord($buf);
+        }
+        $old->setattr($fd, TCSANOW);
+      ' 2>/dev/null) || true
+
+      [[ "$_byte" == "03" ]] && _DB_STOP=1
+
       _tick || true
     done
-    trap - INT
-    _db_cleanup
+
+    # Restore terminal
+    stty "$_old_stty" </dev/tty 2>/dev/null || true
+    _db_cleanup_display
   else
     err "Port-forward failed (port $local_port may be in use)."
-    _db_cleanup
+    _db_cleanup_display
   fi
 }
 
-_db_cleanup() {
-  local had_work=0
+# Kill the port-forward process silently (used by INT trap)
+_db_kill_fwd() {
   if [[ -n "$DB_PF_PID" ]]; then
-    had_work=1
     kill "$DB_PF_PID" 2>/dev/null || true
     wait "$DB_PF_PID" 2>/dev/null || true
     DB_PF_PID=""
   fi
+}
+
+# Clean up display and socat pod after forward ends
+_db_cleanup_display() {
+  _db_kill_fwd
+  # Smooth transition: just clear content area (keeps header + footer)
+  clear_content
   if [[ -n "$DB_PF_POD" ]]; then
-    had_work=1
-    # Position cursor in content area before printing cleanup messages
-    printf '\033[5;1H\033[J' >&3 2>/dev/null || true
     dim "Cleaning up pod $DB_PF_POD..." || true
     kubectl delete pod "$DB_PF_POD" -n "${DB_PF_NS:-default}" --ignore-not-found 2>/dev/null || true
     ok "Deleted pod $DB_PF_POD." || true
     DB_PF_POD=""
   fi
-  ((had_work)) && { ok "DB tunnel closed." || true; }
-  return 0
+  ok "DB tunnel closed." || true
+}
+
+# Full cleanup for EXIT trap (silent kill + pod deletion)
+_db_cleanup() {
+  if [[ -n "$DB_PF_PID" ]]; then
+    kill "$DB_PF_PID" 2>/dev/null || true
+    wait "$DB_PF_PID" 2>/dev/null || true
+    DB_PF_PID=""
+  fi
+  if [[ -n "$DB_PF_POD" ]]; then
+    kubectl delete pod "$DB_PF_POD" -n "${DB_PF_NS:-default}" --ignore-not-found 2>/dev/null || true
+    DB_PF_POD=""
+  fi
 }

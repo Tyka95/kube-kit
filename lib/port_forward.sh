@@ -8,6 +8,7 @@ _validate_port() {
 
 PF_PIDS=()
 PF_DESCS=()
+_PF_STOP=0
 
 port_forward() {
   header "Port Forward"
@@ -65,20 +66,61 @@ port_forward() {
     gum confirm "Add another forward?" || break
   done
 
-  _pf_show_active
   if [[ -n "${PF_PIDS+x}" ]] && ((${#PF_PIDS[@]} > 0)); then
+    # Clean redraw before entering wait mode
+    clear_content
+    header "Port Forward"
+    _pf_show_active
+    divider
     warn "Press Ctrl+C to stop all forwards"
     _redraw_footer
-    trap '_pf_cleanup; trap - INT' INT
-    while true; do
+
+    # Suppress ^C echo during wait
+    local _old_stty
+    _old_stty=$(stty -g </dev/tty 2>/dev/null) || true
+    stty -echo -isig </dev/tty 2>/dev/null || true
+
+    # Flag-based: check for Ctrl+C via _readkey instead of signals
+    _PF_STOP=0
+    while ((_PF_STOP == 0)); do
       _pf_purge_dead
       [[ -z "${PF_PIDS+x}" ]] && break
       ((${#PF_PIDS[@]} == 0)) && break
-      perl -e 'select(undef,undef,undef,0.2)' 2>/dev/null || sleep 1 || true
+
+      # Check for Ctrl+C input (0x03)
+      local _byte=""
+      _byte=$(perl -e '
+        use POSIX qw(tcgetattr tcsetattr TCSANOW);
+        open(my $tty, "<", "/dev/tty") or exit 1;
+        my $fd = fileno($tty);
+        my $old = POSIX::Termios->new; $old->getattr($fd);
+        my $raw = POSIX::Termios->new; $raw->getattr($fd);
+        $raw->setlflag($raw->getlflag & ~(POSIX::ECHO | POSIX::ICANON | POSIX::ISIG));
+        $raw->setcc(POSIX::VMIN, 0);
+        $raw->setcc(POSIX::VTIME, 2);  # 0.2s timeout
+        $raw->setattr($fd, TCSANOW);
+        my $buf;
+        my $n = sysread($tty, $buf, 1);
+        if (defined $n && $n > 0) {
+          printf "%02x", ord($buf);
+        }
+        $old->setattr($fd, TCSANOW);
+      ' 2>/dev/null) || true
+
+      [[ "$_byte" == "03" ]] && _PF_STOP=1
+
       _tick || true
     done
-    trap - INT
-    _pf_cleanup
+
+    # Restore terminal
+    stty "$_old_stty" </dev/tty 2>/dev/null || true
+
+    # Kill remaining forwards
+    _pf_kill_all
+
+    # Smooth transition: just clear content area (keeps header + footer)
+    clear_content
+    warn "All forwards stopped."
   fi
 }
 
@@ -109,11 +151,15 @@ _pf_show_active() {
   fi
 }
 
-_pf_cleanup() {
-  echo "" >&3 || true
+# Kill all port-forward processes silently
+_pf_kill_all() {
   if [[ -n "${PF_PIDS+x}" ]] && ((${#PF_PIDS[@]} > 0)); then
     for pid in "${PF_PIDS[@]}"; do kill "$pid" 2>/dev/null || true; done
   fi
   PF_PIDS=(); PF_DESCS=()
-  warn "All forwards stopped." || true
+}
+
+# Cleanup for EXIT trap in main
+_pf_cleanup() {
+  _pf_kill_all
 }

@@ -8,7 +8,6 @@ pick_aws_profile() {
 }
 
 pick_namespace() {
-  ensure_kube_context || return 1
   local items
   items=$(kubectl get namespaces --no-headers -o custom-columns=":metadata.name,:status.phase" 2>/dev/null | sort) || true
   [[ -z "$items" ]] && { err "No namespaces found." >&2; return 1; }

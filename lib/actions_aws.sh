@@ -5,10 +5,21 @@ sso_login() {
   local profile
   profile=$(pick_aws_profile) || return
   show_cmd "aws sso login --profile $profile"
-  aws sso login --profile "$profile" >&3
-  echo "" >&3
-  ok "Logged in as $profile."
-  _refresh_ctx
+  # Exit alt screen for interactive browser auth flow
+  printf '\033[?25h' >&3
+  _exit_alt_screen
+  local rc=0
+  aws sso login --profile "$profile" || rc=$?
+  echo "" >/dev/tty
+  read -rsn1 -p "Press any key to continue..." </dev/tty >/dev/tty 2>/dev/null || true
+  _enter_alt_screen
+  draw_chrome
+  if ((rc == 0)); then
+    ok "Logged in as $profile."
+  else
+    err "SSO login failed."
+  fi
+  _refresh_ctx || true
   divider
 }
 
@@ -24,8 +35,7 @@ switch_context() {
   local selected
   selected=$(echo "$contexts" | gum filter --placeholder "Type to search..." --header "  Switch kubectl context (current: ${current:-none})") || return
 
-  kubectl config use-context "$selected" >&3
-  echo "" >&3
+  kubectl config use-context "$selected" >/dev/null 2>&1
   ok "Switched to $selected."
   _refresh_ctx
   divider
@@ -82,8 +92,9 @@ connect_cluster() {
   region="${region%)}"
 
   show_cmd "aws eks update-kubeconfig --region $region --name $cluster --profile $profile"
-  aws eks update-kubeconfig --region "$region" --name "$cluster" --profile "$profile" >&3
-  echo "" >&3
+  aws eks update-kubeconfig --region "$region" --name "$cluster" --profile "$profile" 2>&1 | while IFS= read -r line; do
+    dim "$line"
+  done
   ok "Context set to $cluster ($region)."
   _refresh_ctx
   divider

@@ -52,7 +52,7 @@ source "$KUBE_LIB/menus.sh"
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 main() {
-  trap '_db_cleanup 2>/dev/null; _pf_cleanup 2>/dev/null; printf "\033[?1049l" >&3' EXIT
+  trap '_db_cleanup 2>/dev/null; _pf_cleanup 2>/dev/null; _exit_alt_screen' EXIT
 
   # Restore last namespace from state (or config default)
   local _restored_ns
@@ -62,6 +62,7 @@ main() {
     kubectl config set-context --current --namespace="$_restored_ns" &>/dev/null || true
   fi
 
+  _enter_alt_screen
   draw_chrome
 
   while true; do
@@ -91,7 +92,7 @@ main() {
     draw_chrome
   done
 
-  printf '\033[?1049l' >&3
+  _exit_alt_screen
   ok "Bye!"
 }
 
