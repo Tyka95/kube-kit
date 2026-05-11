@@ -529,18 +529,20 @@ choose_menu() {
         if ((count > 0)); then
           if ((sel > 0)); then ((sel--)); else sel=$((count - 1)); fi
           _draw
-          if (( sel != old_sel )); then
-            _shimmer_pulse "$((row_start + (sel - scroll)))" " ${labels[$sel]}" || true
-          fi
+          # No shimmer pulse — the full-row reverse-video already marks
+          # the selection clearly and the pulse misaligned with the row
+          # prefix, producing the 'duplicate trailing letter' artifact.
+          :
         fi
         continue ;;
       1b5b42|1b4f42)
         if ((count > 0)); then
           if ((sel < count - 1)); then ((sel++)); else sel=0; fi
           _draw
-          if (( sel != old_sel )); then
-            _shimmer_pulse "$((row_start + (sel - scroll)))" " ${labels[$sel]}" || true
-          fi
+          # No shimmer pulse — the full-row reverse-video already marks
+          # the selection clearly and the pulse misaligned with the row
+          # prefix, producing the 'duplicate trailing letter' artifact.
+          :
         fi
         continue ;;
       1b5b43|1b4f43)
