@@ -69,7 +69,7 @@ aws_session_validate() {
   local args=()
   [[ -n "$AWS_SESSION_PROFILE" ]] && args+=(--profile "$AWS_SESSION_PROFILE")
   [[ -n "$AWS_SESSION_REGION" ]] && args+=(--region "$AWS_SESSION_REGION")
-  args+=(--cli-connect-timeout 3 --cli-read-timeout 5 --output text --query 'Account,Arn')
+  args+=(--cli-connect-timeout 3 --cli-read-timeout 5 --output text --query '[Account,Arn]')
 
   local out err rc=0
   err=$(mktemp)
@@ -92,12 +92,16 @@ aws_session_validate() {
   AWS_SESSION_ARN=""
   AWS_SESSION_ERROR="${err_line:-sts call failed}"
   if [[ "$err_line" == *"ExpiredToken"* || "$err_line" == *"InvalidClientTokenId"* || \
-        "$err_line" == *"Token has expired"* || "$err_line" == *"SSO session"* ]]; then
+        "$err_line" == *"Token has expired"* || "$err_line" == *"SSO session"* || \
+        "$err_line" == *"sso-oidc"* || "$err_line" == *"refresh"* ]]; then
     AWS_SESSION_STATUS="expired"
   elif [[ -z "$AWS_SESSION_PROFILE" && -z "${AWS_ACCESS_KEY_ID:-}" ]]; then
     AWS_SESSION_STATUS="no-aws"
   else
-    AWS_SESSION_STATUS="expired"
+    # Unknown failure (config error, network, JMESPath bug, etc.). Don't mask
+    # as 'expired' — that hides real problems. Surface as unknown so the footer
+    # shows '… validating' and the user sees AWS_SESSION_ERROR.
+    AWS_SESSION_STATUS="unknown"
   fi
   return 1
 }
