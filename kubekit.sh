@@ -34,6 +34,7 @@ KUBE_LIB="$(cd "$(dirname "$_self")" && pwd)/lib"
 unset _self _dir
 
 source "$KUBE_LIB/config.sh"
+source "$KUBE_LIB/aws_session.sh"
 source "$KUBE_LIB/theme.sh"
 source "$KUBE_LIB/output.sh"
 source "$KUBE_LIB/context.sh"
