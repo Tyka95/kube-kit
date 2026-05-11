@@ -364,8 +364,10 @@ choose_menu() {
     ((scroll < 0)) && scroll=0
 
     _measure_cols
-    SPINNER_ROW=$((row_start - 1))
-    SPINNER_COL=4
+    # Spinner is opt-in; the picker itself does not advertise a row, so
+    # _update_spinner stays a no-op (SPINNER_ROW==0) and never paints over
+    # the breadcrumb. Long-running flows can flip SPINNER_ROW themselves.
+    SPINNER_ROW=0
 
     {
       # Filter indicator (only when active). Sits one row above the list.
@@ -449,26 +451,33 @@ choose_menu() {
   trap 'SPINNER_ROW=0; set_chrome_state idle; _redraw_footer; stty "$_old_stty" </dev/tty 2>/dev/null; printf "\033[?25h" >&3' RETURN
 
   # _readkey: read up to 4 bytes from tty, return as hex string in _HEX.
-  # Pure bash — no perl subprocess per poll (which was the visible flicker).
-  # Returns 1 on timeout (no input). The outer choose_menu already set
-  # `stty -echo -icanon min 0 time 1`, so a -t 0 read picks up bytes within
-  # the kernel's 100ms VTIME without blocking the loop.
+  # Uses perl because bash 3.2 (macOS default) doesn't support fractional
+  # `read -t` and we need sub-second polling without blocking. VTIME=5 means
+  # the kernel waits up to 0.5s for input — half a second of idle between
+  # perl invocations is fine, the visible flicker on earlier versions was
+  # from the spinner drawing over the breadcrumb, not the perl forks.
   _readkey() {
-    _HEX=""
-    local byte=""
-    IFS= read -rs -n 1 -t 0.3 byte </dev/tty 2>/dev/null || return 1
-    [[ -z "$byte" ]] && return 1
-    _HEX=$(printf '%02x' "'$byte")
-    if [[ "$_HEX" == "1b" ]]; then
-      # Escape sequence — pull up to 3 more bytes with a tight timeout.
-      local rest=""
-      IFS= read -rs -n 3 -t 0.01 rest </dev/tty 2>/dev/null || true
-      local i ch
-      for (( i = 0; i < ${#rest}; i++ )); do
-        ch="${rest:$i:1}"
-        _HEX+=$(printf '%02x' "'$ch")
-      done
-    fi
+    _HEX=$(perl -e '
+      use POSIX qw(tcgetattr tcsetattr TCSANOW);
+      open(my $tty, "<", "/dev/tty") or exit 1;
+      my $fd = fileno($tty);
+      my $old = POSIX::Termios->new; $old->getattr($fd);
+      my $raw = POSIX::Termios->new; $raw->getattr($fd);
+      $raw->setcc(POSIX::VMIN, 0);
+      $raw->setcc(POSIX::VTIME, 5);
+      $raw->setattr($fd, TCSANOW);
+      my $buf = "";
+      my $n = sysread($tty, $buf, 1);
+      if (defined $n && $n > 0) {
+        if (ord($buf) == 0x1b) {
+          my $more;
+          my $n2 = sysread($tty, $more, 3);
+          $buf .= $more if defined $n2 && $n2 > 0;
+        }
+        printf "%s", join("", map { sprintf("%02x", ord($_)) } split(//, $buf));
+      }
+      $old->setattr($fd, TCSANOW);
+    ' 2>/dev/null) || true
     [[ -n "$_HEX" ]]
   }
 
