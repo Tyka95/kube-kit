@@ -53,12 +53,26 @@ switch_context() {
   local current
   current=$(kubectl config current-context 2>/dev/null) || true
 
-  local _ctx_items=() _ctx_line _suffix
+  # Build picker items. For EKS ARN contexts (arn:aws:eks:<region>:<acct>:cluster/<name>),
+  # show the short cluster name as the label, account+region in the description,
+  # and "current" in the meta column. Non-EKS contexts (kind, docker-desktop,
+  # etc.) show the raw name in the label.
+  local _ctx_items=() _ctx_line _suffix _label _desc
+  # Parallel array: maps shown-label → full context name to switch to.
+  declare -a _ctx_full=()
   while IFS= read -r _ctx_line; do
     [[ -z "$_ctx_line" ]] && continue
     _suffix=""
     [[ "$_ctx_line" == "$current" ]] && _suffix="current"
-    _ctx_items+=("${_ctx_line}|context|${_suffix}")
+    if [[ "$_ctx_line" =~ ^arn:aws:eks:([a-z0-9-]+):([0-9]{12}):cluster/(.+)$ ]]; then
+      _label="${BASH_REMATCH[3]}"
+      _desc="${BASH_REMATCH[1]}  ${BASH_REMATCH[2]}"
+    else
+      _label="$_ctx_line"
+      _desc="kubectl"
+    fi
+    _ctx_items+=("${_label}|${_desc}|${_suffix}")
+    _ctx_full+=("$_ctx_line")
   done <<< "$contexts"
 
   PICKER_BINDS=()
@@ -72,7 +86,17 @@ switch_context() {
     clear_keyhints
     return
   fi
-  local selected="$PICKER_RESULT_VALUE"
+  # Map the chosen label back to the full kubectl context name.
+  local _picked_label="$PICKER_RESULT_VALUE"
+  local selected=""
+  local _i
+  for _i in "${!_ctx_items[@]}"; do
+    if [[ "${_ctx_items[$_i]%%|*}" == "$_picked_label" ]]; then
+      selected="${_ctx_full[$_i]}"
+      break
+    fi
+  done
+  [[ -z "$selected" ]] && selected="$_picked_label"
 
   kubectl config use-context "$selected" >/dev/null 2>&1
   ok "Switched to $selected."
