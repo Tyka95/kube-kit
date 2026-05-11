@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
-set -euo pipefail
+# pipefail is useful for catching subshell failures; -u catches unbound vars.
+# -e is intentionally OFF: this is an interactive TUI with many user-facing
+# paths that legitimately fail (gum cancel, kubectl unreachable, stty edge
+# cases) and using `cmd || true` defensively everywhere makes the code
+# brittle. Failures should surface as user-visible errors, not silent exits.
+set -uo pipefail
 
 VERSION="0.1.8" # x-release-please-version
 
@@ -34,6 +39,7 @@ KUBE_LIB="$(cd "$(dirname "$_self")" && pwd)/lib"
 unset _self _dir
 
 source "$KUBE_LIB/config.sh"
+source "$KUBE_LIB/aws_session.sh"
 source "$KUBE_LIB/theme.sh"
 source "$KUBE_LIB/output.sh"
 source "$KUBE_LIB/context.sh"
@@ -48,6 +54,7 @@ source "$KUBE_LIB/actions_aws.sh"
 source "$KUBE_LIB/port_forward.sh"
 source "$KUBE_LIB/db_forward.sh"
 source "$KUBE_LIB/menus.sh"
+source "$KUBE_LIB/commands.sh"
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
@@ -62,6 +69,9 @@ main() {
     kubectl config set-context --current --namespace="$_restored_ns" &>/dev/null || true
   fi
 
+  # Kick off the first AWS validate so the footer becomes accurate within seconds.
+  aws_session_validate || true
+
   _enter_alt_screen
   draw_chrome
 
@@ -69,16 +79,30 @@ main() {
     drain_stdin
     BREADCRUMB=""
 
-    local choice rc=0
-    choice=$(choose_menu "Main Menu" \
+    local rc=0
+    choose_menu "Main Menu" \
       "Pods|list · logs · shell · inspect" \
       "Deployments|browse · scale · restart" \
       "Resources|namespaces · services · ingress" \
       "Cluster|context · nodes" \
       "Database|tunnel via socat pod" \
       "AWS|sso · eks · s3" \
-      "Exit") || rc=$?
-    ((rc >= 1)) && break
+      "Exit" || rc=$?
+    # rc=1 = ESC / q (cancel). At the root menu we treat this as a no-op
+    # — quit is only via Ctrl+C (rc=2), the explicit Exit item, or :q.
+    ((rc >= 2)) && break
+    (( rc == 1 )) && continue
+
+    if [[ "$PICKER_RESULT_KIND" == "action" ]]; then
+      case "$PICKER_RESULT_VALUE" in
+        __quit__) break ;;
+        __help__) show_help_overlay ;;
+      esac
+      continue
+    fi
+
+    [[ "$PICKER_RESULT_KIND" != "select" ]] && continue
+    local choice="$PICKER_RESULT_VALUE"
 
     case "$choice" in
       Pods)        menu_pods ;;

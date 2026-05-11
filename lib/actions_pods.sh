@@ -42,9 +42,14 @@ with_deployment() {
 
 _view_logs() {
   local ns="$1" pod="$2"
-  local mode
-  mode=$(gum choose --header "  Log output" \
-    "Tail 50 lines" "Tail 200 lines" "Stream (follow)" "Full log") || return
+  PICKER_BINDS=()
+  choose_menu "Log output" \
+    "Tail 50 lines|tail|50" \
+    "Tail 200 lines|tail|200" \
+    "Stream (follow)|stream|" \
+    "Full log|full|" || return
+  [[ "$PICKER_RESULT_KIND" != "select" ]] && return
+  local mode="$PICKER_RESULT_VALUE"
 
   local flags
   case "$mode" in
@@ -65,8 +70,12 @@ _view_logs() {
 
 _open_shell() {
   local ns="$1" pod="$2"
-  local shell
-  shell=$(gum choose --header "  Shell" "/bin/sh" "/bin/bash") || return
+  PICKER_BINDS=()
+  choose_menu "Shell" \
+    "/bin/sh|shell|" \
+    "/bin/bash|shell|" || return
+  [[ "$PICKER_RESULT_KIND" != "select" ]] && return
+  local shell="$PICKER_RESULT_VALUE"
   header "Shell: $pod"
   show_cmd "kubectl exec -it $pod -n $ns -- $shell"
   echo "" >&3

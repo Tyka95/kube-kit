@@ -5,6 +5,61 @@
 TERM_W=80
 TERM_H=24
 
+# Header content registry: per-screen contextual key hints. Each entry is
+# "<key> <action>". Up to 5 entries render right-aligned in the header.
+# Set by callers via set_keyhints; cleared on screen exit.
+KEYHINTS=()
+HEADER_ROWS=3
+
+set_keyhints() {
+  KEYHINTS=("$@")
+}
+
+clear_keyhints() {
+  KEYHINTS=()
+}
+
+# Breadcrumb trail. Each entry is a short name shown after "Main ›". Updated
+# by push_breadcrumb / pop_breadcrumb at menu boundaries.
+BREADCRUMBS=()
+
+push_breadcrumb() {
+  BREADCRUMBS+=("$1")
+  return 0
+}
+
+pop_breadcrumb() {
+  local n=${#BREADCRUMBS[@]}
+  if (( n > 0 )); then
+    unset 'BREADCRUMBS[n-1]'
+    BREADCRUMBS=(${BREADCRUMBS[@]+"${BREADCRUMBS[@]}"})
+  fi
+  return 0
+}
+
+clear_breadcrumbs() {
+  BREADCRUMBS=()
+  return 0
+}
+
+# Picker position string (e.g. "3 of 12"). Set by choose_menu; consumed by
+# _footer_bar.
+PICKER_POSITION=""
+
+# Chrome state — drives the border color.
+# Values: idle | active | busy.
+CHROME_STATE="idle"
+CHROME_BORDER_COLOR="$C_MUTED"
+
+set_chrome_state() {
+  CHROME_STATE="$1"
+  case "$1" in
+    idle)   CHROME_BORDER_COLOR="$C_MUTED" ;;
+    active) CHROME_BORDER_COLOR="$C_ACCENT" ;;
+    busy)   CHROME_BORDER_COLOR="$C_WARN" ;;
+  esac
+}
+
 # Resize detection — polling-based (bash 3.2 loses SIGWINCH during subshells)
 _WINCH_FLAG=0
 
@@ -17,43 +72,98 @@ _refresh_term_size() {
 
 _header_bar() {
   local w=$TERM_W
-  # Row 1: full-width top border
-  local border=""
-  for ((i = 0; i < w; i++)); do border+="─"; done
-  printf '%s%s%s\n' "$C_DIM" "$border" "$C_RESET"
-  # Row 2: "  X KubeKit v0.1.5 ────────..."  (X = animated icon placeholder)
-  local ver_label="KubeKit v${VERSION}"
-  local prefix_len=$((4 + ${#ver_label} + 1))  # "  XX {ver_label} "
-  local fill=$((w - prefix_len))
-  ((fill < 1)) && fill=1
-  local line=""
-  for ((i = 0; i < fill; i++)); do line+="─"; done
-  # 4 leading spaces: 2 margin + 2 for icon (overwritten by _update_anim)
-  printf '    %s%s%s %s%s%s\n' "$C_WHITE_B" "$ver_label" "$C_RESET" "$C_DIM" "$line" "$C_RESET"
+  local border_color="${CHROME_BORDER_COLOR:-$C_MUTED}"
+  local i
+
+  # Top rule.
+  local rule=""
+  for ((i = 0; i < w; i++)); do rule+="─"; done
+  printf '%s%s%s\n' "$border_color" "$rule" "$C_RESET"
+
+  # Status row: kubekit · k8s … · ns … · aws … glyph detail
+  # Plain printf, no width math, no inner right border. Long lines wrap
+  # cleanly on the next row — terminals handle that natively.
+  local status=" ${C_PRIMARY}kubekit${C_RESET}  ${C_MUTED}·${C_RESET}  "
+  if [[ -n "$_CTX_CLUSTER" ]]; then
+    status+="${C_MUTED}k8s${C_RESET} ${C_PRIMARY}${_CTX_CLUSTER}${C_RESET}"
+  else
+    status+="${C_MUTED}k8s${C_RESET} ${C_DANGER}no cluster${C_RESET}"
+  fi
+  status+="  ${C_MUTED}·${C_RESET}  ${C_MUTED}ns${C_RESET} ${C_PRIMARY}${_CTX_NS:-default}${C_RESET}"
+  if [[ -n "$AWS_SESSION_PROFILE" || "$AWS_SESSION_STATUS" != "unknown" ]]; then
+    status+="  ${C_MUTED}·${C_RESET}  ${C_MUTED}aws${C_RESET} ${C_PRIMARY}${AWS_SESSION_PROFILE:-<none>}${C_RESET}"
+    local glyph detail
+    case "$AWS_SESSION_STATUS" in
+      ok)
+        if [[ -n "$AWS_SESSION_CTX_ACCOUNT" && -n "$AWS_SESSION_ACCOUNT" \
+           && "$AWS_SESSION_CTX_ACCOUNT" != "$AWS_SESSION_ACCOUNT" ]]; then
+          glyph="${C_WARN}⚠${C_RESET}"
+          detail="${C_WARN}mismatch ${AWS_SESSION_CTX_ACCOUNT}${C_RESET}"
+        else
+          glyph="${C_SUCCESS}✓${C_RESET}"
+          detail="${C_MUTED}${AWS_SESSION_ACCOUNT}${C_RESET}"
+        fi ;;
+      expired) glyph="${C_DANGER}✗${C_RESET}";  detail="${C_DANGER}expired${C_RESET}" ;;
+      no-aws)  glyph="${C_MUTED}-${C_RESET}";   detail="${C_MUTED}no aws${C_RESET}" ;;
+      *)       glyph="${C_MUTED}.${C_RESET}";   detail="${C_MUTED}validating${C_RESET}" ;;
+    esac
+    status+=" ${glyph} ${detail}"
+  fi
+  printf '%s\n' "$status"
+
+  # Hints row (only if there are any). Inline horizontally, not stacked.
+  local hint_line=""
+  local h
+  for h in ${KEYHINTS[@]+"${KEYHINTS[@]}"}; do
+    hint_line+="  ${C_MUTED}${h}${C_RESET}"
+  done
+  if [[ -n "$hint_line" ]]; then
+    printf ' %s\n' "$hint_line"
+  else
+    # Empty hint row keeps HEADER_ROWS stable at 4.
+    printf '\n'
+  fi
+
+  # Bottom rule.
+  printf '%s%s%s\n' "$border_color" "$rule" "$C_RESET"
+}
+
+_breadcrumb_row() {
+  local trail="${C_MUTED}Main${C_RESET}"
+  local b
+  for b in ${BREADCRUMBS[@]+"${BREADCRUMBS[@]}"}; do
+    trail+="${C_MUTED} › ${C_RESET}${C_PRIMARY}${b}${C_RESET}"
+  done
+  printf ' %s' "$trail"
 }
 
 _footer_bar() {
   local w=$TERM_W
-  local border=""
-  for ((i = 0; i < w; i++)); do border+="─"; done
+  local border_color="${CHROME_BORDER_COLOR:-$C_MUTED}"
 
-  local _ftr=""
-  if [[ -n "$_CTX_CLUSTER" ]]; then
-    _ftr+="${C_CYAN}⎈${C_RESET} ${_CTX_CLUSTER}"
-  else
-    _ftr+="${C_RED}⎈${C_RESET} no cluster"
-  fi
-  _ftr+="  ${C_DIM}│${C_RESET}  ${C_CYAN}⬡${C_RESET} ${_CTX_NS:-default}"
-  if [[ -n "$_CTX_AWS_PROFILE" ]]; then
-    _ftr+="  ${C_DIM}│${C_RESET}  ${C_CYAN}☁${C_RESET} ${_CTX_AWS_PROFILE}"
-    if [[ "$_CTX_AWS_EXPIRY" == "expired" ]]; then
-      _ftr+="  ${C_RED}⏱ expired${C_RESET}"
-    elif [[ -n "$_CTX_AWS_EXPIRY" ]]; then
-      _ftr+="  ${C_GREEN}⏱ ${_CTX_AWS_EXPIRY}${C_RESET}"
-    fi
-  fi
-  printf '%s%s%s\n' "$C_DIM" "$border" "$C_RESET"
-  printf ' %s' "$_ftr"
+  local top="" i
+  for ((i = 0; i < w - 2; i++)); do top+="─"; done
+  printf '%s╭%s╮%s\n' "$border_color" "$top" "$C_RESET"
+
+  local left="${C_MUTED}/${C_RESET} filter   ${C_MUTED}:${C_RESET} command"
+  local right=""
+  [[ -n "$PICKER_POSITION" ]] && right+="${C_MUTED}${PICKER_POSITION}${C_RESET}   "
+  right+="${C_MUTED}↑↓${C_RESET} select  ${C_MUTED}⏎${C_RESET} go  ${C_MUTED}?${C_RESET} help"
+
+  local plain_left plain_right
+  plain_left=$(printf '%s' "$left" | sed $'s/\033\\[[0-9;]*m//g')
+  plain_right=$(printf '%s' "$right" | sed $'s/\033\\[[0-9;]*m//g')
+  local pad=$((w - 4 - ${#plain_left} - ${#plain_right}))
+  (( pad < 1 )) && pad=1
+  local spaces=""
+  for ((i = 0; i < pad; i++)); do spaces+=" "; done
+
+  printf '%s│%s %s%s%s %s│%s\n' \
+    "$border_color" "$C_RESET" "$left" "$spaces" "$right" "$border_color" "$C_RESET"
+
+  local bottom=""
+  for ((i = 0; i < w - 2; i++)); do bottom+="─"; done
+  printf '%s╰%s╯%s' "$border_color" "$bottom" "$C_RESET"
 }
 
 _enter_alt_screen() {
@@ -68,23 +178,28 @@ draw_chrome() {
   _refresh_ctx || true
   _refresh_term_size
 
-  # Clear screen and home cursor
+  # Clear screen and home cursor.
   printf '\033[2J\033[H' >&3
-
-  # Hide cursor
   printf '\033[?25l' >&3
 
-  # Header (rows 1-2: border + title)
+  # Header height is fixed at 4 rows: top rule + status + hints + bottom rule.
+  # Hints row is always rendered (blank if there are none) so HEADER_ROWS
+  # stays constant and the breadcrumb doesn't jump as menus change.
+  HEADER_ROWS=4
+
+  # Position header explicitly at row 1.
+  printf '\033[1;1H' >&3
   _header_bar >&3
 
-  # Draw initial animated icon
-  _update_anim
+  # Breadcrumb on the row immediately after the header. Content begins
+  # two rows after the header (one breadcrumb row + one blank).
+  printf '\033[%d;1H\033[2K' "$((HEADER_ROWS + 1))" >&3
+  _breadcrumb_row >&3
+  printf '\033[%d;1H\033[2K' "$((HEADER_ROWS + 2))" >&3
 
-  # Footer pinned at bottom (rows TERM_H-1 and TERM_H)
   _redraw_footer
 
-  # Cursor to content area (row 3)
-  printf '\033[3;1H' >&3
+  printf '\033[%d;1H' "$((HEADER_ROWS + 3))" >&3
 }
 
 # Full reset for resize — toggle alt screen to flush iTerm2 reflow artifacts
@@ -97,59 +212,91 @@ draw_chrome_reset() {
 # Redraw just the footer at the bottom of the screen
 _redraw_footer() {
   _refresh_term_size
-  printf '\033[s' >&3                              # save cursor
-  printf '\033[%d;1H\033[K' "$((TERM_H - 1))" >&3 # go to footer row, clear
-  printf '\033[%d;1H\033[K' "$TERM_H" >&3          # clear last row too
-  printf '\033[%d;1H' "$((TERM_H - 1))" >&3        # back to footer row
+  printf '\033[s' >&3
+  printf '\033[%d;1H\033[K' "$((TERM_H - 2))" >&3
+  printf '\033[%d;1H\033[K' "$((TERM_H - 1))" >&3
+  printf '\033[%d;1H\033[K' "$TERM_H" >&3
+  printf '\033[%d;1H' "$((TERM_H - 2))" >&3
   _footer_bar >&3
-  printf '\033[u' >&3                              # restore cursor
+  printf '\033[u' >&3
 }
 
 # Clear content area and reposition cursor for action output
 clear_content() {
-  printf '\033[3;1H' >&3
+  local top=$((HEADER_ROWS + 3))
+  local bottom=$((TERM_H - 3))
+  printf '\033[%d;1H' "$top" >&3
   local i
-  for ((i = 3; i <= TERM_H - 2; i++)); do
+  for ((i = top; i <= bottom; i++)); do
     printf '\033[2K\033[B' >&3
   done
   _redraw_footer
-  printf '\033[3;1H' >&3
+  printf '\033[%d;1H' "$top" >&3
 }
 
+# Custom keybindings for the next choose_menu invocation. Each entry is
+# "<key>:<action>". choose_menu consumes and clears this on entry.
+PICKER_BINDS=()
+
+# Result emitted by choose_menu.
+#   PICKER_RESULT_KIND=select  + PICKER_RESULT_VALUE=<label>  on Enter
+#   PICKER_RESULT_KIND=action  + PICKER_RESULT_VALUE=<action> on custom key
+#   PICKER_RESULT_KIND=cancel  + PICKER_RESULT_VALUE=""       on q / esc / non-zero return
+PICKER_RESULT_KIND=""
+PICKER_RESULT_VALUE=""
+
 # ── Menu chooser ──────────────────────────────────────────────────────────────
-# Items: "label" or "label|description"
-# Returns: 0=selected (label on stdout), 1=back, 2=quit
+# Items: "label", "label|description", or "label|description|metadata"
+# Returns: 0=selected, 1=back, 2=quit
+# Sets PICKER_RESULT_KIND and PICKER_RESULT_VALUE on all exits.
 
 choose_menu() {
   local title="$1"; shift
   local raw_items=("$@")
-  local all_labels=() all_descs=()
+  local all_labels=() all_descs=() all_metas=()
   local total=${#raw_items[@]}
+
+  PICKER_RESULT_KIND=""
+  PICKER_RESULT_VALUE=""
+
+  set_chrome_state "active"
+  _redraw_footer
 
   for item in "${raw_items[@]}"; do
     if [[ "$item" == *"|"* ]]; then
-      all_labels+=("${item%%|*}")
-      all_descs+=("${item#*|}")
+      local _lbl="${item%%|*}"
+      local _rest="${item#*|}"
+      if [[ "$_rest" == *"|"* ]]; then
+        all_labels+=("$_lbl")
+        all_descs+=("${_rest%%|*}")
+        all_metas+=("${_rest#*|}")
+      else
+        all_labels+=("$_lbl")
+        all_descs+=("$_rest")
+        all_metas+=("")
+      fi
     else
       all_labels+=("$item")
       all_descs+=("")
+      all_metas+=("")
     fi
   done
 
   # Filter state
   local _filter=""
-  local labels=() descs=() _fidx=()  # filtered views
+  local labels=() descs=() metas=() _fidx=()  # filtered views
   local count=0 sel=0 scroll=0
 
   # Rebuild filtered item arrays from _filter
   _apply_filter() {
-    labels=(); descs=(); _fidx=()
+    labels=(); descs=(); metas=(); _fidx=()
     local _filt_lower
     _filt_lower=$(echo "$_filter" | tr 'A-Z' 'a-z')
     for ((i = 0; i < total; i++)); do
       if [[ -z "$_filter" ]]; then
         labels+=("${all_labels[$i]}")
         descs+=("${all_descs[$i]}")
+        metas+=("${all_metas[$i]}")
         _fidx+=("$i")
       else
         local _lbl_lower
@@ -157,6 +304,7 @@ choose_menu() {
         if [[ "$_lbl_lower" == *"$_filt_lower"* ]]; then
           labels+=("${all_labels[$i]}")
           descs+=("${all_descs[$i]}")
+          metas+=("${all_metas[$i]}")
           _fidx+=("$i")
         fi
       fi
@@ -174,6 +322,134 @@ choose_menu() {
 
   printf '\033[?25l' >&3
 
+  local row_start=$((HEADER_ROWS + 3))
+
+  # Compute natural column widths once per draw based on the visible items.
+  _measure_cols() {
+    _LBL_W=0; _DESC_W=0; _META_W=0
+    local i ll ld lm
+    for ((i = 0; i < count; i++)); do
+      ll=${#labels[$i]};      (( ll > _LBL_W  )) && _LBL_W=$ll
+      ld=${#descs[$i]};       (( ld > _DESC_W )) && _DESC_W=$ld
+      lm=${#metas[$i]};       (( lm > _META_W )) && _META_W=$lm
+    done
+    # Apply sensible caps so absurdly long values don't blow out the row.
+    (( _LBL_W  > 40 )) && _LBL_W=40
+    (( _DESC_W > 60 )) && _DESC_W=60
+    (( _META_W > 24 )) && _META_W=24
+  }
+
+  # Render a single row by index. Reads the outer-scope sel/labels/etc.
+  # The row is painted in two zones: bright C_PRIMARY for the label, muted
+  # C_MUTED for description + metadata. Selected rows get a C_BG_SELECT
+  # background that spans the whole padded row width.
+  _draw_row() {
+    local row="$1" idx="$2"
+    local lbl="${labels[$idx]:0:_LBL_W}"
+    local desc="${descs[$idx]:0:_DESC_W}"
+    local meta="${metas[$idx]:0:_META_W}"
+    local lbl_pad="$lbl"
+    while (( ${#lbl_pad}  < _LBL_W  )); do lbl_pad+=" "; done
+    local desc_pad="$desc"
+    while (( ${#desc_pad} < _DESC_W )); do desc_pad+=" "; done
+    local meta_pad=""
+    local _mp=$((_META_W - ${#meta}))
+    (( _mp < 0 )) && _mp=0
+    while (( ${#meta_pad} < _mp )); do meta_pad+=" "; done
+    meta_pad+="$meta"
+
+    local label_zone="  ${lbl_pad}"
+    local detail_zone="   ${desc_pad}"
+    [[ -n "$meta" ]] && detail_zone+="   ${meta_pad}"
+    local remaining=$((TERM_W - ${#label_zone} - ${#detail_zone}))
+    (( remaining < 0 )) && remaining=0
+    while (( remaining > 0 )); do detail_zone+=" "; remaining=$((remaining - 1)); done
+
+    printf '\033[%d;1H\033[2K' "$row" >&3
+    if (( idx == sel )); then
+      # bg covers whole row; fg switches from primary (label) to muted (detail).
+      printf '%s%s%s%s%s%s' \
+        "$C_BG_SELECT" "$C_BOLD" "$C_PRIMARY" "$label_zone" \
+        "$C_MUTED" "${detail_zone}${C_RESET}" >&3
+    else
+      printf '%s%s%s%s%s%s' \
+        "$C_BOLD" "$C_PRIMARY" "$label_zone" \
+        "$C_RESET" "$C_MUTED" "${detail_zone}${C_RESET}" >&3
+    fi
+  }
+
+  # Paint a row in the "mid-fade" tint — used as the first frame of the
+  # selection-move animation so the new row visibly appears, then settles.
+  _draw_row_fade() {
+    local row="$1" idx="$2"
+    local lbl="${labels[$idx]:0:_LBL_W}"
+    local desc="${descs[$idx]:0:_DESC_W}"
+    local meta="${metas[$idx]:0:_META_W}"
+    local lbl_pad="$lbl"
+    while (( ${#lbl_pad}  < _LBL_W  )); do lbl_pad+=" "; done
+    local desc_pad="$desc"
+    while (( ${#desc_pad} < _DESC_W )); do desc_pad+=" "; done
+    local meta_pad=""
+    local _mp=$((_META_W - ${#meta}))
+    (( _mp < 0 )) && _mp=0
+    while (( ${#meta_pad} < _mp )); do meta_pad+=" "; done
+    meta_pad+="$meta"
+    local plain_text="  ${lbl_pad}   ${desc_pad}"
+    [[ -n "$meta" ]] && plain_text+="   ${meta_pad}"
+    while (( ${#plain_text} < TERM_W )); do plain_text+=" "; done
+    plain_text="${plain_text:0:TERM_W}"
+    printf '\033[%d;1H%s%s%s%s' "$row" "$C_BG_FADE" "$C_PRIMARY" "$plain_text" "$C_RESET" >&3
+  }
+
+  # Move the selection from $1 → current $sel without redrawing everything.
+  # Two-frame fade gives the new row a brief 'lift' so the user sees the
+  # selection travel; the old row repaints once, plain. The footer is
+  # NOT redrawn — that 3-row clear was the visible blink during nav.
+  # The position counter updates with a tiny in-place overwrite instead.
+  _smooth_select_move() {
+    local was=$1
+    if (( sel < scroll || sel >= scroll + visible )); then
+      _draw
+      return 0
+    fi
+    local list_top=$row_start
+    [[ -n "$_filter" ]] && list_top=$((row_start + 1))
+    local old_row=$((list_top + (was - scroll)))
+    local new_row=$((list_top + (sel - scroll)))
+
+    # Repaint old row plain immediately.
+    _draw_row "$old_row" "$was"
+
+    # Frame 1 — new row in the dim fade tint (visible 'lift').
+    _draw_row_fade "$new_row" "$sel"
+    perl -e 'select(undef,undef,undef,0.08)' 2>/dev/null || sleep 0.08
+
+    # Frame 2 — settle into the full selection background.
+    _draw_row "$new_row" "$sel"
+
+    # Position counter in-place: jump to its column on the action-bar row,
+    # paint, and move cursor back. Avoids the 3-row footer flash.
+    PICKER_POSITION="$((sel + 1)) of ${count}"
+    _update_position_in_footer
+    return 0
+  }
+
+  # Cheap in-place update of the position counter in the action bar. The
+  # footer rows themselves are untouched, so no flicker.
+  _update_position_in_footer() {
+    # Target row = TERM_H-1 (the middle of the 3-row footer block).
+    # Column: right side of the action bar, before the keyhint cluster.
+    # Approximate position: TERM_W - 36 (length of '↑↓ select  ⏎ go  ? help' + counter).
+    local col=$((TERM_W - 38))
+    (( col < 1 )) && col=1
+    printf '\033[s\033[%d;%dH\033[K%s%s%s   %s↑↓%s select  %s⏎%s go  %s?%s help\033[u' \
+      "$((TERM_H - 1))" "$col" \
+      "$C_MUTED" "$PICKER_POSITION" "$C_RESET" \
+      "$C_MUTED" "$C_RESET" \
+      "$C_MUTED" "$C_RESET" \
+      "$C_MUTED" "$C_RESET" >&3
+  }
+
   _draw() {
     ((count == 0)) && visible=0
     ((count > 0 && visible == 0)) && visible=1
@@ -182,120 +458,79 @@ choose_menu() {
     ((sel >= scroll + visible)) && scroll=$((sel - visible + 1))
     ((scroll < 0)) && scroll=0
 
+    _measure_cols
+    # Spinner is opt-in; the picker itself does not advertise a row, so
+    # _update_spinner stays a no-op (SPINNER_ROW==0) and never paints over
+    # the breadcrumb. Long-running flows can flip SPINNER_ROW themselves.
+    SPINNER_ROW=0
+
+    # When a filter is active, the first content row shows the filter, and
+    # the list slides down by one. Otherwise the list starts at row_start.
+    local _list_start=$row_start
+    if [[ -n "$_filter" ]]; then
+      _list_start=$((row_start + 1))
+    fi
+
     {
-      # Content starts at row 3 (after 2-line header: border + title)
-      printf '\033[3;1H'
-
-      # Breadcrumb + title + optional filter indicator
-      printf '\033[K\n'
+      # Clear the filter indicator row regardless of state so a freshly
+      # emptied filter doesn't leave its label behind.
+      printf '\033[%d;1H\033[2K' "$row_start"
       if [[ -n "$_filter" ]]; then
-        if [[ -n "$BREADCRUMB" ]]; then
-          local _title_text="  ⎈  ${BREADCRUMB} › ${title}  / ${_filter} "
-          printf '\033[K  %s⎈  %s%s › %s%s  %s/ %s%s\n' \
-            "$C_DIM" "$BREADCRUMB" "$C_RESET" "$C_CYAN_B" "$title" "$C_YELLOW" "$_filter" "$C_RESET"
-        else
-          local _title_text="  ⎈  ${title}  / ${_filter} "
-          printf '\033[K  %s⎈  %s  %s/ %s%s\n' \
-            "$C_CYAN_B" "$title" "$C_YELLOW" "$_filter" "$C_RESET"
-        fi
-      elif [[ -n "$BREADCRUMB" ]]; then
-        local _title_text="  ⎈  ${BREADCRUMB} › ${title} "
-        printf '\033[K  %s⎈  %s%s › %s%s %s\n' "$C_DIM" "$BREADCRUMB" "$C_RESET" "$C_CYAN_B" "$title" "$C_RESET"
-      else
-        local _title_text="  ⎈  ${title} "
-        printf '\033[K  %s⎈  %s %s\n' "$C_CYAN_B" "$title" "$C_RESET"
+        printf '  %s/%s %s%s%s' "$C_ACCENT" "$C_RESET" "$C_PRIMARY" "$_filter" "$C_RESET"
       fi
-      SPINNER_ROW=4
-      SPINNER_COL=$((${#_title_text} + 1))
-      printf '\033[K\n'
-
-      # Compute max label length for aligned descriptions
-      local _max_label=0
-      for ((i = 0; i < count; i++)); do
-        local _ll=${#labels[$i]}
-        ((_ll > _max_label)) && _max_label=$_ll
-      done
-
-      # Items — also store text+rows for shimmer
-      SHIMMER_TEXTS=()
-      SHIMMER_ROWS=()
-      SHIMMER_SEL_IDX=-1
-      SHIMMER_POS=-1
-      SHIMMER_WAIT=0
-      SHIMMER_DIR=1
 
       if ((count == 0)); then
-        printf '\033[K  %sno matches%s\n' "$C_DIM" "$C_RESET"
+        printf '\033[%d;1H\033[2K  %sno matches%s' "$_list_start" "$C_MUTED" "$C_RESET"
       fi
 
-      for ((i = 0; i < visible; i++)); do
-        local idx=$((scroll + i))
-        local item_row=$((6 + i))
-        local full_line=""
-        local _lbl="${labels[$idx]}"
-        local _pad=$((_max_label - ${#_lbl}))
-        local _padding=""
-        for ((_pi = 0; _pi < _pad; _pi++)); do _padding+=" "; done
-        printf '\033[K'
-        if ((idx == sel)); then
-          full_line="   ❯ ${_lbl}${_padding}"
-          local _desc_start=${#full_line}
-          [[ -n "${descs[$idx]}" ]] && full_line+="  ${descs[$idx]}"
-          printf '  %s ❯ %s%s%s' "$C_WHITE_B" "$_lbl" "$_padding" "$C_RESET"
-          if [[ -n "${descs[$idx]}" ]]; then
-            printf '  %s%s%s' "$C_LCYAN" "${descs[$idx]}" "$C_RESET"
-          fi
-          printf '\n'
-          SHIMMER_SEL_IDX=$i
-          SHIMMER_DESC_START=$_desc_start
-        else
-          full_line="     ${_lbl}${_padding}"
-          [[ -n "${descs[$idx]}" ]] && full_line+="  ${descs[$idx]}"
-          printf '  %s   %s%s%s' "$C_DIM" "$_lbl" "$_padding" "$C_RESET"
-          if [[ -n "${descs[$idx]}" ]]; then
-            printf '  %s%s%s' "$C_DIM" "${descs[$idx]}" "$C_RESET"
-          fi
-          printf '\n'
-        fi
-        SHIMMER_TEXTS+=("$full_line")
-        SHIMMER_ROWS+=("$item_row")
+      local row=$_list_start
+      local vis_row
+      for ((vis_row = 0; vis_row < visible; vis_row++)); do
+        local idx=$((scroll + vis_row))
+        (( idx >= count )) && break
+        _draw_row "$row" "$idx"
+        row=$((row + 1))
       done
 
-      # Clear remaining lines in content area
-      local _clear_from=$((6 + visible))
-      local _clear_to=$((TERM_H - 3))
+      # Clear remaining lines in content area.
+      local _clear_from=$((_list_start + visible))
+      local _clear_to=$((TERM_H - 4))
       for ((i = _clear_from; i <= _clear_to; i++)); do
-        printf '\033[K\n'
+        printf '\033[%d;1H\033[2K' "$i"
       done
 
-      # Hint bar
-      printf '\033[%d;1H' "$((TERM_H - 3))"
-      printf '\033[K\n'
-      if [[ -n "$_filter" ]]; then
-        printf '\033[K  %s↑↓%s navigate  %s→/Enter%s select  %s←/esc%s back  %sBksp%s erase  %stype%s to filter\n' \
-          "$C_LCYAN" "$C_DIM" "$C_LCYAN" "$C_DIM" "$C_LCYAN" "$C_DIM" "$C_LCYAN" "$C_DIM" "$C_LCYAN" "$C_RESET"
+      # Update picker position for footer.
+      if (( count > 0 )); then
+        PICKER_POSITION="$((sel + 1)) of ${count}"
       else
-        printf '\033[K  %s↑↓%s navigate  %s→/Enter%s select  %s←/esc%s back  %sc%s clear  %sq%s quit  %stype%s to filter\n' \
-          "$C_LCYAN" "$C_DIM" "$C_LCYAN" "$C_DIM" "$C_LCYAN" "$C_DIM" "$C_LCYAN" "$C_DIM" "$C_LCYAN" "$C_DIM" "$C_LCYAN" "$C_RESET"
+        PICKER_POSITION=""
       fi
-
-      # Footer pinned at bottom
-      printf '\033[%d;1H' "$((TERM_H - 1))"
-      _footer_bar
     } >&3
+    _redraw_footer
   }
 
   _draw
 
   # Set raw input mode once; restore on return
-  local _old_stty
-  _old_stty=$(stty -g </dev/tty 2>/dev/null) || true
+  local _old_stty=""
+  _old_stty=$(stty -g </dev/tty 2>/dev/null) || _old_stty=""
   stty -echo -icanon min 0 time 1 </dev/tty 2>/dev/null || true
-  trap 'SPINNER_ROW=0; SHIMMER_SEL_IDX=-1; stty "$_old_stty" </dev/tty 2>/dev/null; printf "\033[?25h" >&3' RETURN
+  trap '{
+    set +e
+    SPINNER_ROW=0
+    set_chrome_state idle 2>/dev/null
+    _redraw_footer 2>/dev/null
+    [[ -n "${_old_stty:-}" ]] && stty "${_old_stty}" </dev/tty 2>/dev/null
+    printf "\033[?25h" >&3 2>/dev/null
+    set -e
+  } || true' RETURN
 
   # _readkey: read up to 4 bytes from tty, return as hex string in _HEX.
-  # Reads all available bytes in a single perl call to avoid escape sequence splitting.
-  # Returns 1 on timeout (no input).
+  # Uses perl because bash 3.2 (macOS default) doesn't support fractional
+  # `read -t` and we need sub-second polling without blocking. VTIME=5 means
+  # the kernel waits up to 0.5s for input — half a second of idle between
+  # perl invocations is fine, the visible flicker on earlier versions was
+  # from the spinner drawing over the breadcrumb, not the perl forks.
   _readkey() {
     _HEX=$(perl -e '
       use POSIX qw(tcgetattr tcsetattr TCSANOW);
@@ -304,12 +539,11 @@ choose_menu() {
       my $old = POSIX::Termios->new; $old->getattr($fd);
       my $raw = POSIX::Termios->new; $raw->getattr($fd);
       $raw->setcc(POSIX::VMIN, 0);
-      $raw->setcc(POSIX::VTIME, 1);  # 0.1s timeout
+      $raw->setcc(POSIX::VTIME, 5);
       $raw->setattr($fd, TCSANOW);
       my $buf = "";
       my $n = sysread($tty, $buf, 1);
       if (defined $n && $n > 0) {
-        # Got first byte; try to read more (for escape sequences)
         if (ord($buf) == 0x1b) {
           my $more;
           my $n2 = sysread($tty, $more, 3);
@@ -323,53 +557,86 @@ choose_menu() {
   }
 
   local _prev_w=$TERM_W _prev_h=$TERM_H
+  local _resize_check_tick=0
 
-  while true; do
-    # Poll-based resize detection (every _readkey timeout = ~100ms)
+  # Check terminal size only after real input or every ~20 polls (~10s).
+  # Polling stty+awk every iteration was the constantly-flashing "bash awk"
+  # the user saw in process monitors.
+  _maybe_handle_resize() {
     _refresh_term_size
     if ((TERM_W != _prev_w || TERM_H != _prev_h)); then
-      # Debounce: wait for resize to stop
-      local _stable=0
-      while ((_stable < 2)); do
-        sleep 0.15
-        local _w=$TERM_W _h=$TERM_H
-        _refresh_term_size
-        if ((TERM_W == _w && TERM_H == _h)); then
-          ((_stable++))
-        else
-          _stable=0
-        fi
-      done
       _prev_w=$TERM_W; _prev_h=$TERM_H
-      # Invalidate animation state
-      SPINNER_ROW=0; SHIMMER_SEL_IDX=-1
-      SHIMMER_TEXTS=(); SHIMMER_ROWS=()
-      # Fresh alt screen buffer + recalculate layout (full reset for iTerm2)
+      SPINNER_ROW=0
       draw_chrome_reset
       max_visible=$((TERM_H - 9))
       ((max_visible < 3)) && max_visible=3
       visible=$((count < max_visible ? count : max_visible))
       _draw
     fi
+  }
+
+  while true; do
     if ! _readkey; then
       _tick || true
+      # Only stat the terminal occasionally while idle.
+      _resize_check_tick=$((_resize_check_tick + 1))
+      if (( _resize_check_tick >= 20 )); then
+        _resize_check_tick=0
+        _maybe_handle_resize
+      fi
       continue
     fi
+    # On real input, refresh size cheaply so reflows are seen promptly.
+    _maybe_handle_resize
     local key="$_HEX"
+    local old_sel=$sel
 
-    # Arrow keys: 1b5b41=up, 1b5b42=down, 1b5b43=right, 1b5b44=left
+    # Arrow keys: CSI form (1b5b...) and SS3/application-keypad form (1b4f...).
+    # 41=up, 42=down, 43=right, 44=left.
     case "$key" in
-      1b5b41) if ((count > 0)); then if ((sel > 0)); then ((sel--)); else sel=$((count - 1)); fi; _draw; fi; continue ;;
-      1b5b42) if ((count > 0)); then if ((sel < count - 1)); then ((sel++)); else sel=0; fi; _draw; fi; continue ;;
-      1b5b43) if ((count > 0)); then _select_flash "$((6 + sel - scroll))" "${labels[$sel]}"; echo "${labels[$sel]}"; return 0; fi; continue ;;
-      1b5b44) if [[ -n "$_filter" ]]; then _filter=""; _apply_filter; visible=$((count < max_visible ? count : max_visible)); _draw; continue; fi; return 1 ;;
-      1b*)    if [[ -n "$_filter" ]]; then _filter=""; _apply_filter; visible=$((count < max_visible ? count : max_visible)); _draw; continue; fi; return 1 ;;
+      1b5b41|1b4f41)
+        if ((count > 0)); then
+          local _was_sel=$sel
+          if ((sel > 0)); then ((sel--)); else sel=$((count - 1)); fi
+          _smooth_select_move "$_was_sel"
+        fi
+        continue ;;
+      1b5b42|1b4f42)
+        if ((count > 0)); then
+          local _was_sel=$sel
+          if ((sel < count - 1)); then ((sel++)); else sel=0; fi
+          _smooth_select_move "$_was_sel"
+        fi
+        continue ;;
+      1b5b43|1b4f43)
+        if ((count > 0)); then
+          PICKER_RESULT_KIND="select"
+          PICKER_RESULT_VALUE="${labels[$sel]}"
+          echo "${labels[$sel]}"
+          return 0
+        fi
+        continue ;;
+      1b5b44|1b4f44)
+        if [[ -n "$_filter" ]]; then
+          _filter=""; _apply_filter; visible=$((count < max_visible ? count : max_visible)); _draw; continue
+        fi
+        PICKER_RESULT_KIND="cancel"
+        PICKER_RESULT_VALUE=""
+        return 1 ;;
+      1b*)
+        if [[ -n "$_filter" ]]; then
+          _filter=""; _apply_filter; visible=$((count < max_visible ? count : max_visible)); _draw; continue
+        fi
+        PICKER_RESULT_KIND="cancel"
+        PICKER_RESULT_VALUE=""
+        return 1 ;;
     esac
 
     # 0a = LF (Enter), 0d = CR
     if [[ "$key" == "0a" || "$key" == "0d" ]]; then
       if ((count > 0)); then
-        _select_flash "$((6 + sel - scroll))" "${labels[$sel]}"
+        PICKER_RESULT_KIND="select"
+        PICKER_RESULT_VALUE="${labels[$sel]}"
         echo "${labels[$sel]}"
         return 0
       fi
@@ -389,12 +656,16 @@ choose_menu() {
 
     # 03 = Ctrl+C
     if [[ "$key" == "03" ]]; then
+      PICKER_RESULT_KIND="cancel"
+      PICKER_RESULT_VALUE=""
       return 2
     fi
 
     # q = 71, c = 63 — commands when filter is empty, filter chars when active
     if [[ "$key" == "71" ]]; then
       if [[ -z "$_filter" ]]; then
+        PICKER_RESULT_KIND="cancel"
+        PICKER_RESULT_VALUE=""
         return 2
       fi
     fi
@@ -413,6 +684,93 @@ choose_menu() {
       continue
     fi
 
+    # 2f = '/' — inline filter prompt
+    if [[ "$key" == "2f" && -z "$_filter" ]]; then
+      printf '\033[?25h' >&3
+      printf '\033[%d;1H\033[2K' "$((TERM_H - 1))" >&3
+      printf ' %s/%s ' "$C_ACCENT" "$C_RESET" >&3
+      # Temporarily re-enable echo + canonical mode so the user sees what
+      # they're typing and Enter terminates the read.
+      stty echo icanon </dev/tty 2>/dev/null || true
+      local _new_filter=""
+      read -r _new_filter < /dev/tty || true
+      stty -echo -icanon min 0 time 1 </dev/tty 2>/dev/null || true
+      _filter="$_new_filter"
+      _apply_filter
+      visible=$((count < max_visible ? count : max_visible))
+      printf '\033[?25l' >&3
+      _redraw_footer
+      _draw
+      continue
+    fi
+
+    # 3a = ':' — command palette
+    if [[ "$key" == "3a" && -z "$_filter" ]]; then
+      printf '\033[?25h' >&3
+      printf '\033[%d;1H\033[2K' "$((TERM_H - 1))" >&3
+      printf ' %s:%s ' "$C_ACCENT" "$C_RESET" >&3
+      stty echo icanon </dev/tty 2>/dev/null || true
+      local _cmd=""
+      read -r _cmd < /dev/tty || true
+      stty -echo -icanon min 0 time 1 </dev/tty 2>/dev/null || true
+      printf '\033[?25l' >&3
+      if [[ -z "$_cmd" ]]; then
+        _redraw_footer
+        continue
+      fi
+      if run_command "$_cmd"; then
+        case "$COMMAND_RESULT" in
+          __quit__)
+            PICKER_RESULT_KIND="action"
+            PICKER_RESULT_VALUE="__quit__"
+            printf '\033[?25h' >&3
+            if [[ -n "${_old_stty:-}" ]]; then stty "${_old_stty:-}" </dev/tty 2>/dev/null || true; fi
+            return 0
+            ;;
+          __help__)
+            PICKER_RESULT_KIND="action"
+            PICKER_RESULT_VALUE="__help__"
+            printf '\033[?25h' >&3
+            if [[ -n "${_old_stty:-}" ]]; then stty "${_old_stty:-}" </dev/tty 2>/dev/null || true; fi
+            return 0
+            ;;
+          *)
+            _redraw_footer
+            _draw
+            continue
+            ;;
+        esac
+      else
+        _redraw_footer
+        _draw
+        continue
+      fi
+    fi
+
+    # 3f = '?' — help overlay
+    if [[ "$key" == "3f" && -z "$_filter" ]]; then
+      PICKER_RESULT_KIND="action"
+      PICKER_RESULT_VALUE="__help__"
+      printf '\033[?25h' >&3
+      if [[ -n "${_old_stty:-}" ]]; then stty "${_old_stty:-}" </dev/tty 2>/dev/null || true; fi
+      return 0
+    fi
+
+    # Custom keybindings registered by the caller (PICKER_BINDS).
+    local _bind _bind_key _bind_action _matched_bind=0
+    for _bind in ${PICKER_BINDS[@]+"${PICKER_BINDS[@]}"}; do
+      _bind_key="${_bind%%:*}"
+      _bind_action="${_bind#*:}"
+      if [[ "$key" == "$_bind_key" ]]; then
+        PICKER_RESULT_KIND="action"
+        PICKER_RESULT_VALUE="$_bind_action"
+        PICKER_BINDS=()
+        printf '\033[?25h' >&3
+        if [[ -n "${_old_stty:-}" ]]; then stty "${_old_stty:-}" </dev/tty 2>/dev/null || true; fi
+        return 0
+      fi
+    done
+
     # Printable ASCII (hex 20-7e) → append to filter
     local _dec
     _dec=$((16#$key)) 2>/dev/null || continue
@@ -425,4 +783,56 @@ choose_menu() {
       _draw
     fi
   done
+}
+
+# ── Help overlay ─────────────────────────────────────────────────────────────
+# Rendered in the content area; lists global keys + registered commands +
+# the current screen's keyhints. Any keystroke dismisses it.
+show_help_overlay() {
+  push_breadcrumb "Help"
+  local _prev_hints=(${KEYHINTS[@]+"${KEYHINTS[@]}"})
+  set_keyhints "esc back"
+  draw_chrome
+  clear_content
+
+  local top=$((HEADER_ROWS + 3))
+  printf '\033[%d;1H' "$top" >&3
+  printf '  %sKubeKit — help%s\n\n' "$C_PRIMARY" "$C_RESET" >&3
+
+  printf '  %sGlobal keys%s\n' "$C_ACCENT" "$C_RESET" >&3
+  printf '    %s↑↓%s     move selection\n'   "$C_MUTED" "$C_RESET" >&3
+  printf '    %s⏎%s      activate\n'          "$C_MUTED" "$C_RESET" >&3
+  printf '    %sesc%s    back / cancel\n'    "$C_MUTED" "$C_RESET" >&3
+  printf '    %s/%s      filter list\n'      "$C_MUTED" "$C_RESET" >&3
+  printf '    %s:%s      command palette\n'  "$C_MUTED" "$C_RESET" >&3
+  printf '    %sq%s      quit\n'             "$C_MUTED" "$C_RESET" >&3
+  printf '    %s?%s      this help\n\n'      "$C_MUTED" "$C_RESET" >&3
+
+  if (( ${#_prev_hints[@]} > 0 )); then
+    printf '  %sScreen keys%s\n' "$C_ACCENT" "$C_RESET" >&3
+    local hint
+    for hint in "${_prev_hints[@]}"; do
+      printf '    %s%s%s\n' "$C_MUTED" "$hint" "$C_RESET" >&3
+    done
+    printf '\n' >&3
+  fi
+
+  printf '  %sCommands%s\n' "$C_ACCENT" "$C_RESET" >&3
+  local i
+  for ((i = 0; i < ${#COMMAND_NAMES[@]}; i++)); do
+    printf '    %s:%s%s%-10s%s %s%s%s\n' \
+      "$C_MUTED" "$C_RESET" \
+      "$C_PRIMARY" "${COMMAND_NAMES[$i]}" "$C_RESET" \
+      "$C_MUTED" "${COMMAND_DESCS[$i]}" "$C_RESET" >&3
+  done
+
+  printf '\n  %sPress any key to return%s' "$C_MUTED" "$C_RESET" >&3
+
+  # Drain any pending input then wait for one keypress.
+  if declare -F drain_stdin &>/dev/null; then drain_stdin; fi
+  read -rsn1 _ < /dev/tty 2>/dev/null || true
+
+  pop_breadcrumb
+  KEYHINTS=(${_prev_hints[@]+"${_prev_hints[@]}"})
+  draw_chrome
 }

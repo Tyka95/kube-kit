@@ -58,6 +58,9 @@ restart_pod()        { with_pod "Restart Pod" _restart_pod; }
 # ── Submenus ──────────────────────────────────────────────────────────────────
 
 menu_pods() {
+  push_breadcrumb "Pods"
+  set_keyhints "L logs" "S shell" "Y yaml" "D delete" "? help"
+  draw_chrome
   run_menu "Pods" \
     "Browse Pods:browse_pods" \
     "View Logs:view_logs" \
@@ -66,35 +69,57 @@ menu_pods() {
     "Restart Pod:restart_pod" \
     "Port Forward:port_forward" \
     "Resource Usage:resource_usage"
+  pop_breadcrumb
+  clear_keyhints
 }
 
 menu_deployments() {
+  push_breadcrumb "Deployments"
+  set_keyhints "R restart" "S scale" "Y yaml" "? help"
+  draw_chrome
   run_menu "Deployments" \
     "Browse Deployments:browse_deploys" \
     "Inspect Deployment:inspect_deploy" \
     "Scale Replicas:scale_replicas" \
     "Rolling Restart:rolling_restart"
+  pop_breadcrumb
+  clear_keyhints
 }
 
 menu_resources() {
+  push_breadcrumb "Resources"
+  set_keyhints "N namespaces" "S services" "I ingress" "? help"
+  draw_chrome
   run_menu "Resources" \
     "Namespaces:browse_namespaces" \
     "Services:browse_services" \
     "Ingresses:browse_ingresses" \
     "ConfigMaps:browse_configmaps" \
     "Events:show_events"
+  pop_breadcrumb
+  clear_keyhints
 }
 
 menu_cluster() {
+  push_breadcrumb "Cluster"
+  set_keyhints "C context" "N nodes" "E events" "? help"
+  draw_chrome
   run_menu "Cluster" \
     "Current Context:show_context" \
     "Switch Context:switch_context" \
     "Node Status:show_nodes"
+  pop_breadcrumb
+  clear_keyhints
 }
 
 menu_aws() {
+  push_breadcrumb "AWS"
+  set_keyhints "O sso login" "E eks connect" "B buckets" "? help"
+  draw_chrome
   run_menu "AWS" \
     "SSO Login:sso_login" \
     "Connect EKS Cluster:connect_cluster" \
     "S3 Buckets:list_buckets"
+  pop_breadcrumb
+  clear_keyhints
 }

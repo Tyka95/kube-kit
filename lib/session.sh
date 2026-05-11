@@ -42,15 +42,15 @@ ensure_kube_context() {
 
     if [[ -n "$profile" ]]; then
       warn "Can't reach cluster — refreshing SSO session ($profile)..."
-      local rc=0
-      run_interactive aws sso login --profile "$profile" || rc=$?
+      AWS_SESSION_PROFILE="$profile"
+      aws_session_login || true
     else
       warn "Can't reach cluster. No AWS profile found."
       local profile_sel
       profile_sel=$(pick_aws_profile) || return 1
       warn "Logging in as $profile_sel..."
-      local rc=0
-      run_interactive aws sso login --profile "$profile_sel" || rc=$?
+      AWS_SESSION_PROFILE="$profile_sel"
+      aws_session_login || true
     fi
   fi
 

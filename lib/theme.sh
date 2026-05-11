@@ -1,30 +1,59 @@
-# ── Theme ─────────────────────────────────────────────────────────────────────
+# ── Theme ────────────────────────────────────────────────────────────────────
+# Six semantic color tokens. Every color reference in KubeKit must map to one
+# of these. Positional names (C_CYAN, C_RED, …) are gone — they tell you the
+# color but not the intent. Tokens tell you the intent and let us re-skin later.
 
-C_CYAN=$'\033[36m'
-C_CYAN_B=$'\033[1;36m'
-C_LCYAN=$'\033[96m'        # Bright/light cyan
-C_WHITE_B=$'\033[1;37m'    # Bright white
-C_LBLUE=$'\033[38;5;117m'  # Light blue (256-color)
-C_GREEN=$'\033[32m'
-C_YELLOW=$'\033[33m'
-C_RED=$'\033[31m'
-C_GRAY=$'\033[38;5;245m'
-C_DIM=$'\033[2m'
-C_BOLD=$'\033[1m'
+# Detect color depth. <8 colors = monochrome fallback (no fg colors, just
+# bold + reverse).
+_KK_COLORS=$(tput colors 2>/dev/null || echo 0)
+
+if (( _KK_COLORS >= 256 )); then
+  # Tokyo Night palette (truecolor / 256-aware terminals).
+  C_PRIMARY=$'\033[38;2;224;224;224m'   # #e0e0e0  near-white body text
+  C_ACCENT=$'\033[38;2;122;162;247m'    # #7aa2f7  selection / active focus
+  C_MUTED=$'\033[38;2;86;95;137m'       # #565f89  secondary metadata
+  C_SUCCESS=$'\033[38;2;158;206;106m'   # #9ece6a  ok / validated
+  C_WARN=$'\033[38;2;224;175;104m'      # #e0af68  pending / mismatch
+  C_DANGER=$'\033[38;2;247;118;142m'    # #f7768e  error / expired
+  # Selection background — dim navy, readable with C_PRIMARY text on top.
+  C_BG_SELECT=$'\033[48;2;30;42;78m'    # #1e2a4e
+  # Mid-fade tint used for the brief selection-move animation.
+  C_BG_FADE=$'\033[48;2;18;25;46m'      # #12192e
+elif (( _KK_COLORS >= 16 )); then
+  # 16-color fallback.
+  C_PRIMARY=$'\033[37m'
+  C_ACCENT=$'\033[94m'
+  C_MUTED=$'\033[90m'
+  C_SUCCESS=$'\033[92m'
+  C_WARN=$'\033[93m'
+  C_DANGER=$'\033[91m'
+  C_BG_SELECT=$'\033[44m'
+  C_BG_FADE=$'\033[44m'
+else
+  # No-color terminal. Rely on bold/reverse for emphasis.
+  C_PRIMARY=""
+  C_ACCENT=""
+  C_MUTED=""
+  C_SUCCESS=""
+  C_WARN=""
+  C_DANGER=""
+  C_BG_SELECT=$'\033[7m'   # fall back to reverse-video when no colors
+  C_BG_FADE=$'\033[7m'
+fi
+
+# Style modifiers (orthogonal to color tokens).
 C_RESET=$'\033[0m'
+C_BOLD=$'\033[1m'
+C_REVERSE=$'\033[7m'
 
-# Gum theme — override default pink with cyan
-export GUM_FILTER_INDICATOR_FOREGROUND="6"
-export GUM_FILTER_MATCH_FOREGROUND="6"
-export GUM_FILTER_PROMPT_FOREGROUND="6"
-export GUM_FILTER_CURSOR_FOREGROUND="6"
-export GUM_CHOOSE_CURSOR_FOREGROUND="6"
-export GUM_CHOOSE_SELECTED_FOREGROUND="6"
-export GUM_CONFIRM_SELECTED_FOREGROUND="0"
-export GUM_CONFIRM_SELECTED_BACKGROUND="6"
-export GUM_CONFIRM_UNSELECTED_FOREGROUND="6"
-export GUM_CONFIRM_UNSELECTED_BACKGROUND=""
-export GUM_CONFIRM_PROMPT_FOREGROUND="6"
-export GUM_INPUT_CURSOR_FOREGROUND="6"
-export GUM_INPUT_PROMPT_FOREGROUND="6"
-export GUM_SPIN_SPINNER_FOREGROUND="6"
+# ── gum widget styling ───────────────────────────────────────────────────────
+# Centralize so every `gum confirm` / `gum input` call automatically follows
+# the palette. We intentionally do NOT export styling for `gum choose` /
+# `gum filter` — those widgets are being replaced by KubeKit's own choose_menu.
+export GUM_CONFIRM_PROMPT_FOREGROUND="${C_PRIMARY}"
+export GUM_CONFIRM_SELECTED_BACKGROUND="${C_ACCENT}"
+export GUM_CONFIRM_SELECTED_FOREGROUND="${C_PRIMARY}"
+export GUM_CONFIRM_UNSELECTED_FOREGROUND="${C_MUTED}"
+export GUM_INPUT_CURSOR_FOREGROUND="${C_ACCENT}"
+export GUM_INPUT_PROMPT_FOREGROUND="${C_ACCENT}"
+export GUM_INPUT_PLACEHOLDER_FOREGROUND="${C_MUTED}"

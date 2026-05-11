@@ -39,8 +39,14 @@ port_forward() {
 
       if ((${#port_options[@]} > 0)); then
         port_options+=("Custom...")
-        local selected
-        selected=$(printf '%s\n' "${port_options[@]}" | gum choose --header "  Port") || return
+        local _port_items=() _po
+        for _po in "${port_options[@]}"; do
+          _port_items+=("${_po}|port|")
+        done
+        PICKER_BINDS=()
+        choose_menu "Port" "${_port_items[@]}" || return
+        [[ "$PICKER_RESULT_KIND" != "select" ]] && return
+        local selected="$PICKER_RESULT_VALUE"
         [[ "$selected" != "Custom..." ]] && port="${selected%% (*}"
       fi
     fi
