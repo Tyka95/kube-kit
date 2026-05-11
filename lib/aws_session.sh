@@ -9,38 +9,42 @@ AWS_SESSION_ARN=""
 AWS_SESSION_STATUS="unknown"   # unknown | ok | expired | no-aws
 AWS_SESSION_ERROR=""
 AWS_SESSION_CHECKED_AT=0
+AWS_SESSION_CTX_ACCOUNT=""    # cached: account id from current kubectl context ARN
 
 # Resolve PROFILE and REGION from kubeconfig exec env > env vars > kubekit config.
 # No hardcoded defaults — empty result means "unknown".
 aws_session_resolve() {
+  local ctx region="" ctx_acct=""
+  ctx=$(kubectl config current-context 2>/dev/null) || true
+
   local profile=""
   profile=$(kubectl config view --minify -o jsonpath='{.users[0].user.exec.env[?(@.name=="AWS_PROFILE")].value}' 2>/dev/null) || true
   [[ -z "$profile" ]] && profile="${AWS_PROFILE:-${AWS_DEFAULT_PROFILE:-${CFG_DEFAULT_PROFILE:-}}}"
   AWS_SESSION_PROFILE="$profile"
 
-  local region=""
-  local ctx
-  ctx=$(kubectl config current-context 2>/dev/null) || true
-  if [[ "$ctx" =~ arn:aws:eks:([a-z0-9-]+): ]]; then
+  if [[ "$ctx" =~ arn:aws:eks:([a-z0-9-]+):([0-9]{12}): ]]; then
     region="${BASH_REMATCH[1]}"
+    ctx_acct="${BASH_REMATCH[2]}"
   fi
   [[ -z "$region" ]] && region="${AWS_REGION:-${AWS_DEFAULT_REGION:-}}"
   if [[ -z "$region" && ${#CFG_AWS_REGIONS[@]} -gt 0 ]]; then
     region="${CFG_AWS_REGIONS[0]}"
   fi
   AWS_SESSION_REGION="$region"
+  AWS_SESSION_CTX_ACCOUNT="$ctx_acct"
 }
 
-# Return the account id encoded in the current kubectl context's EKS ARN, if any.
+# Cached accessor for the EKS context's account id. Refreshed by
+# aws_session_resolve / aws_session_context_changed — callers (like
+# _footer_bar) should not call kubectl themselves on every redraw.
 aws_session_context_account() {
-  local ctx
-  ctx=$(kubectl config current-context 2>/dev/null) || true
-  if [[ "$ctx" =~ arn:aws:eks:[a-z0-9-]+:([0-9]{12}): ]]; then
-    printf '%s' "${BASH_REMATCH[1]}"
-  fi
+  printf '%s' "$AWS_SESSION_CTX_ACCOUNT"
 }
 
-# Validate the resolved session via sts get-caller-identity.
+# Validate the current session via sts get-caller-identity.
+# Operates on whatever AWS_SESSION_PROFILE/REGION are currently set — does NOT
+# re-resolve from environment. Use aws_session_context_changed (or set the
+# profile explicitly) before calling if you need to switch identity.
 # Updates ACCOUNT, ARN, STATUS, ERROR, CHECKED_AT.
 # Skips work if last successful check was <60s ago, unless $1=1 (force).
 aws_session_validate() {
@@ -53,8 +57,6 @@ aws_session_validate() {
       return 0
     fi
   fi
-
-  aws_session_resolve
 
   if ! command -v aws &>/dev/null; then
     AWS_SESSION_STATUS="no-aws"
@@ -101,7 +103,8 @@ aws_session_validate() {
 }
 
 # Interactively run `aws sso login --profile <P>` and re-validate.
-# Returns 0 if STATUS=ok after login, 1 otherwise.
+# Drops out of the alt-screen so the device-code URL is visible, then
+# restores chrome after the user returns. Returns 0 if STATUS=ok after login.
 aws_session_login() {
   if [[ -z "$AWS_SESSION_PROFILE" ]]; then
     AWS_SESSION_ERROR="no profile to log in with"
@@ -113,12 +116,14 @@ aws_session_login() {
     return 1
   fi
 
-  # run_interactive is defined in lib/session.sh; if absent, fall back to direct call.
-  if declare -F run_interactive &>/dev/null; then
-    run_interactive aws sso login --profile "$AWS_SESSION_PROFILE" || true
-  else
-    aws sso login --profile "$AWS_SESSION_PROFILE" >&3 2>&3 || true
-  fi
+  printf '\033[?25h' >&3
+  if declare -F _exit_alt_screen &>/dev/null; then _exit_alt_screen; fi
+  aws sso login --profile "$AWS_SESSION_PROFILE" || true
+  echo "" >/dev/tty 2>/dev/null || true
+  read -rsn1 -p "Press any key to continue..." </dev/tty >/dev/tty 2>/dev/null || true
+  if declare -F _enter_alt_screen &>/dev/null; then _enter_alt_screen; fi
+  if declare -F draw_chrome &>/dev/null; then draw_chrome; fi
+
   aws_session_validate 1
 }
 
@@ -167,3 +172,8 @@ _aws_session_cleanup_legacy() {
   find "$d" -maxdepth 1 -type f -name 'db_cache_*' -exec rm -f {} + 2>/dev/null || true
 }
 _aws_session_cleanup_legacy
+
+# Initial resolve at module load — populates PROFILE/REGION/CTX_ACCOUNT from
+# the current environment so the footer and first validate have something to
+# go on. Re-run by aws_session_context_changed when identity changes.
+aws_session_resolve
