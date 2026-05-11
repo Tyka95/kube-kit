@@ -68,82 +68,59 @@ _refresh_term_size() {
 _header_bar() {
   local w=$TERM_W
   local border_color="${CHROME_BORDER_COLOR:-$C_MUTED}"
+  local i
 
-  # Row 1: ╭─ kubekit ─────…─╮
-  local label=" kubekit "
-  local left="╭─${label}"
-  local right="╮"
-  local fill_len=$((w - ${#left} - ${#right}))
-  (( fill_len < 0 )) && fill_len=0
-  local fill="" i
-  for ((i = 0; i < fill_len; i++)); do fill+="─"; done
-  printf '%s%s%s%s%s\n' "$border_color" "$left" "$fill" "$right" "$C_RESET"
+  # Top rule.
+  local rule=""
+  for ((i = 0; i < w; i++)); do rule+="─"; done
+  printf '%s%s%s\n' "$border_color" "$rule" "$C_RESET"
 
-  # Row 2: status line (k8s / ns / aws segments).
-  local status=""
+  # Status row: kubekit · k8s … · ns … · aws … glyph detail
+  # Plain printf, no width math, no inner right border. Long lines wrap
+  # cleanly on the next row — terminals handle that natively.
+  local status=" ${C_PRIMARY}kubekit${C_RESET}  ${C_MUTED}·${C_RESET}  "
   if [[ -n "$_CTX_CLUSTER" ]]; then
     status+="${C_MUTED}k8s${C_RESET} ${C_PRIMARY}${_CTX_CLUSTER}${C_RESET}"
   else
     status+="${C_MUTED}k8s${C_RESET} ${C_DANGER}no cluster${C_RESET}"
   fi
-  status+="  ${C_MUTED}ns${C_RESET} ${C_PRIMARY}${_CTX_NS:-default}${C_RESET}"
+  status+="  ${C_MUTED}·${C_RESET}  ${C_MUTED}ns${C_RESET} ${C_PRIMARY}${_CTX_NS:-default}${C_RESET}"
   if [[ -n "$AWS_SESSION_PROFILE" || "$AWS_SESSION_STATUS" != "unknown" ]]; then
-    status+="  ${C_MUTED}aws${C_RESET} ${C_PRIMARY}${AWS_SESSION_PROFILE:-<none>}${C_RESET}"
+    status+="  ${C_MUTED}·${C_RESET}  ${C_MUTED}aws${C_RESET} ${C_PRIMARY}${AWS_SESSION_PROFILE:-<none>}${C_RESET}"
     local glyph detail
     case "$AWS_SESSION_STATUS" in
       ok)
         if [[ -n "$AWS_SESSION_CTX_ACCOUNT" && -n "$AWS_SESSION_ACCOUNT" \
            && "$AWS_SESSION_CTX_ACCOUNT" != "$AWS_SESSION_ACCOUNT" ]]; then
           glyph="${C_WARN}⚠${C_RESET}"
-          detail="${C_WARN}mismatch ⟶ ${AWS_SESSION_CTX_ACCOUNT}${C_RESET}"
+          detail="${C_WARN}mismatch ${AWS_SESSION_CTX_ACCOUNT}${C_RESET}"
         else
           glyph="${C_SUCCESS}✓${C_RESET}"
           detail="${C_MUTED}${AWS_SESSION_ACCOUNT}${C_RESET}"
         fi ;;
       expired) glyph="${C_DANGER}✗${C_RESET}";  detail="${C_DANGER}expired${C_RESET}" ;;
-      no-aws)  glyph="${C_MUTED}–${C_RESET}";   detail="${C_MUTED}no aws${C_RESET}" ;;
-      *)       glyph="${C_MUTED}…${C_RESET}";   detail="${C_MUTED}validating${C_RESET}" ;;
+      no-aws)  glyph="${C_MUTED}-${C_RESET}";   detail="${C_MUTED}no aws${C_RESET}" ;;
+      *)       glyph="${C_MUTED}.${C_RESET}";   detail="${C_MUTED}validating${C_RESET}" ;;
     esac
     status+=" ${glyph} ${detail}"
   fi
+  printf '%s\n' "$status"
 
-  # Visible length of status (strip ANSI for padding math).
-  local plain
-  plain=$(printf '%s' "$status" | sed $'s/\033\\[[0-9;]*m//g')
-  local visible_status=${#plain}
-
-  # Right-aligned key hints, up to 5 stacked vertically.
-  local hints=()
+  # Hints row (only if there are any). Inline horizontally, not stacked.
+  local hint_line=""
   local h
-  for h in ${KEYHINTS[@]+"${KEYHINTS[@]}"}; do hints+=("$h"); done
-  (( ${#hints[@]} > 5 )) && hints=("${hints[@]:0:5}")
-
-  # Row 2: status on the left, first hint right-aligned.
-  local hint0="${hints[0]:-}"
-  local pad=$((w - 2 - visible_status - ${#hint0}))
-  (( pad < 1 )) && pad=1
-  local spaces=""
-  for ((i = 0; i < pad; i++)); do spaces+=" "; done
-  printf '%s│%s %s%s%s%s %s│%s\n' \
-    "$border_color" "$C_RESET" \
-    "$status" "$spaces" "$C_MUTED" "$hint0" "$border_color" "$C_RESET"
-
-  # Rows 3+ : remaining hints (right-aligned, blank left).
-  local hi hpad hspaces j
-  for ((i = 1; i < ${#hints[@]}; i++)); do
-    hi="${hints[$i]}"
-    hpad=$((w - 4 - ${#hi}))
-    (( hpad < 0 )) && hpad=0
-    hspaces=""
-    for ((j = 0; j < hpad; j++)); do hspaces+=" "; done
-    printf '%s│%s%s%s%s %s│%s\n' \
-      "$border_color" "$C_RESET" "$hspaces" "$C_MUTED" "$hi" "$border_color" "$C_RESET"
+  for h in ${KEYHINTS[@]+"${KEYHINTS[@]}"}; do
+    hint_line+="  ${C_MUTED}${h}${C_RESET}"
   done
+  if [[ -n "$hint_line" ]]; then
+    printf ' %s\n' "$hint_line"
+  else
+    # Empty hint row keeps HEADER_ROWS stable at 4.
+    printf '\n'
+  fi
 
-  # Bottom border: ╰─…─╯
-  local bottom=""
-  for ((i = 0; i < w - 2; i++)); do bottom+="─"; done
-  printf '%s╰%s╯%s\n' "$border_color" "$bottom" "$C_RESET"
+  # Bottom rule.
+  printf '%s%s%s\n' "$border_color" "$rule" "$C_RESET"
 }
 
 _breadcrumb_row() {
@@ -200,11 +177,10 @@ draw_chrome() {
   printf '\033[2J\033[H' >&3
   printf '\033[?25l' >&3
 
-  # Header height depends on hint count: 1 top + 1 status + (hints-1) extras + 1 bottom.
-  local _hints_len=${#KEYHINTS[@]}
-  (( _hints_len > 5 )) && _hints_len=5
-  HEADER_ROWS=3
-  (( _hints_len > 1 )) && HEADER_ROWS=$((HEADER_ROWS + _hints_len - 1))
+  # Header height is fixed at 4 rows: top rule + status + hints + bottom rule.
+  # Hints row is always rendered (blank if there are none) so HEADER_ROWS
+  # stays constant and the breadcrumb doesn't jump as menus change.
+  HEADER_ROWS=4
 
   # Position header explicitly at row 1.
   printf '\033[1;1H' >&3
@@ -412,20 +388,23 @@ choose_menu() {
         while (( ${#meta_pad} < _mp )); do meta_pad+=" "; done
         meta_pad+="$meta"
 
-        # Build the plain (un-colored) row text once, ASCII-only, so we can
-        # color the whole row uniformly without worrying about UTF-8 boundary
-        # artifacts. Two-space prefix; selected row gets '> ' instead.
-        local prefix="  "
-        (( idx == sel )) && prefix="> "
-        plain_text="${prefix}${lbl_pad}   ${desc_pad}"
+        # Always 2-space lead-in regardless of selection. Selection is
+        # signaled by reverse-video on the entire padded row, not by a
+        # leading '>' indicator (which previously drifted the columns by
+        # one cell on every move).
+        plain_text="  ${lbl_pad}   ${desc_pad}"
         [[ -n "$meta" ]] && plain_text+="   ${meta_pad}"
 
-        # Move + clear-to-eol + paint.
-        printf '\033[%d;1H\033[2K' "$row"
+        # Right-pad the whole row to the terminal width so the reverse
+        # bar reaches the right edge (k9s/lazygit pattern).
+        while (( ${#plain_text} < TERM_W )); do plain_text+=" "; done
+        plain_text="${plain_text:0:TERM_W}"
+
+        printf '\033[%d;1H' "$row"
         if (( idx == sel )); then
           printf '%s%s%s' "$C_REVERSE" "$plain_text" "$C_RESET"
         else
-          printf '%s%s%s' "$C_PRIMARY" "$plain_text" "$C_RESET"
+          printf '\033[2K%s%s%s' "$C_PRIMARY" "$plain_text" "$C_RESET"
         fi
 
         row=$((row + 1))
