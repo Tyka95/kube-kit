@@ -5,18 +5,123 @@ DB_PF_PID=""
 DB_PF_NS=""
 _DB_STOP=0
 
+_DB_DISCOVERED=()
+
+# Resolve the AWS profile relevant to the current kubectl context.
+# Order: kubeconfig exec env > AWS_PROFILE > AWS_DEFAULT_PROFILE > config default.
+_db_resolve_profile() {
+  local profile=""
+  profile=$(kubectl config view --minify -o jsonpath='{.users[0].user.exec.env[?(@.name=="AWS_PROFILE")].value}' 2>/dev/null) || true
+  [[ -z "$profile" ]] && profile="${AWS_PROFILE:-${AWS_DEFAULT_PROFILE:-${CFG_DEFAULT_PROFILE:-}}}"
+  printf '%s' "$profile"
+}
+
+# Resolve region from the active EKS context ARN, env, or config. Empty if unknown.
+_db_resolve_region() {
+  local region=""
+  local ctx
+  ctx=$(kubectl config current-context 2>/dev/null) || true
+  if [[ "$ctx" =~ arn:aws:eks:([a-z0-9-]+): ]]; then
+    region="${BASH_REMATCH[1]}"
+  fi
+  [[ -z "$region" ]] && region="${AWS_REGION:-${AWS_DEFAULT_REGION:-}}"
+  if [[ -z "$region" && ${#CFG_AWS_REGIONS[@]} -gt 0 ]]; then
+    region="${CFG_AWS_REGIONS[0]}"
+  fi
+  printf '%s' "$region"
+}
+
+# Populate _DB_DISCOVERED from AWS RDS describe-* for current profile/region.
+# Uses on-disk cache (5 min) keyed by profile+region.
+_discover_db_targets() {
+  _DB_DISCOVERED=()
+  command -v aws &>/dev/null || return 0
+
+  local profile region
+  profile=$(_db_resolve_profile)
+  region=$(_db_resolve_region)
+  [[ -z "$region" ]] && return 0
+
+  local cache_dir="${HOME}/.local/state/kubekit"
+  local cache_file="${cache_dir}/db_cache_${profile:-default}_${region}"
+  [[ -d "$cache_dir" ]] || mkdir -p "$cache_dir"
+
+  if [[ -f "$cache_file" ]]; then
+    local mtime now age
+    mtime=$(stat -f %m "$cache_file" 2>/dev/null || stat -c %Y "$cache_file" 2>/dev/null || echo 0)
+    now=$(date +%s)
+    age=$(( now - mtime ))
+    if (( age < 300 )); then
+      while IFS= read -r line; do
+        [[ -n "$line" ]] && _DB_DISCOVERED+=("$line")
+      done < "$cache_file"
+      return 0
+    fi
+  fi
+
+  local aws_args=()
+  [[ -n "$profile" ]] && aws_args+=(--profile "$profile")
+  aws_args+=(--region "$region" --output text)
+
+  local clusters instances
+  clusters=$(aws rds describe-db-clusters "${aws_args[@]}" \
+    --query 'DBClusters[].[DBClusterIdentifier,Endpoint,Port]' 2>/dev/null) || clusters=""
+  instances=$(aws rds describe-db-instances "${aws_args[@]}" \
+    --query 'DBInstances[?DBClusterIdentifier==`null`].[DBInstanceIdentifier,Endpoint.Address,Endpoint.Port]' 2>/dev/null) || instances=""
+
+  : > "$cache_file"
+  local id endpoint port entry tag="${profile:-default}"
+
+  if [[ -n "$clusters" ]]; then
+    while IFS=$'\t' read -r id endpoint port; do
+      [[ -z "$id" || -z "$endpoint" || "$endpoint" == "None" ]] && continue
+      entry="${id} (${region}) [${tag}]|${endpoint}|${port:-5432}"
+      _DB_DISCOVERED+=("$entry")
+      printf '%s\n' "$entry" >> "$cache_file"
+    done <<< "$clusters"
+  fi
+
+  if [[ -n "$instances" ]]; then
+    while IFS=$'\t' read -r id endpoint port; do
+      [[ -z "$id" || -z "$endpoint" || "$endpoint" == "None" ]] && continue
+      entry="${id} (${region}) [${tag}]|${endpoint}|${port:-5432}"
+      _DB_DISCOVERED+=("$entry")
+      printf '%s\n' "$entry" >> "$cache_file"
+    done <<< "$instances"
+  fi
+}
+
 db_forward() {
   header "Database Tunnel"
 
-  # Build target list from config + always offer custom
+  # Build target list: config entries + auto-discovered + custom.
   local _db_options=()
   if [[ ${#CFG_DB_TARGETS[@]} -gt 0 ]]; then
     for _dbt in "${CFG_DB_TARGETS[@]}"; do
       _db_options+=("$_dbt")
     done
-  else
-    _db_options+=("Staging Aurora (eu-west-1)|staging-rds-aurora-cluster.cluster-chm826uieyqw.eu-west-1.rds.amazonaws.com|5432")
   fi
+
+  dim "Discovering databases via AWS RDS..."
+  _discover_db_targets
+  clear_content
+  header "Database Tunnel"
+
+  if [[ ${#_DB_DISCOVERED[@]} -gt 0 ]]; then
+    local _new_host _ex _dup
+    for _dbt in "${_DB_DISCOVERED[@]}"; do
+      _new_host="${_dbt#*|}"
+      _new_host="${_new_host%%|*}"
+      _dup=false
+      if [[ ${#_db_options[@]} -gt 0 ]]; then
+        for _ex in "${_db_options[@]}"; do
+          [[ "$_ex" == *"|${_new_host}|"* ]] && _dup=true && break
+        done
+      fi
+      $_dup || _db_options+=("$_dbt")
+    done
+  fi
+
   _db_options+=("Custom endpoint")
 
   local _display_opts=()

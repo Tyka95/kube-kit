@@ -1,0 +1,23 @@
+# KubeKit configuration
+# Copy to ~/.config/kubekit/config and edit to taste.
+#
+# Format: key=value (one per line). Lines starting with `#` are comments.
+
+# Comma-separated AWS regions offered in pickers.
+aws_regions=us-east-1,eu-west-1
+
+# Default namespace used when a context has none set.
+default_namespace=default
+
+# Default AWS profile used by AWS actions (SSO login, EKS setup, etc.).
+# default_profile=my-profile
+
+# Database tunnel targets. Repeat `db_target=` for each entry.
+# Format: Name|host|port
+#
+# The socat pod runs inside the current kubectl context, so reachability
+# depends on the cluster's VPC — not on the local AWS profile.
+#
+# Auto-discovery via the AWS SDK populates this list at runtime, so
+# entries here are only needed for overrides or pretty labels.
+# db_target=My DB|<cluster-or-instance-endpoint>|5432
