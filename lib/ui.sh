@@ -30,7 +30,7 @@ push_breadcrumb() {
 pop_breadcrumb() {
   local n=${#BREADCRUMBS[@]}
   (( n > 0 )) && unset 'BREADCRUMBS[n-1]'
-  BREADCRUMBS=("${BREADCRUMBS[@]}")
+  BREADCRUMBS=(${BREADCRUMBS[@]+"${BREADCRUMBS[@]}"})
 }
 
 clear_breadcrumbs() {
@@ -115,7 +115,7 @@ _header_bar() {
   # Right-aligned key hints, up to 5 stacked vertically.
   local hints=()
   local h
-  for h in "${KEYHINTS[@]}"; do hints+=("$h"); done
+  for h in ${KEYHINTS[@]+"${KEYHINTS[@]}"}; do hints+=("$h"); done
   (( ${#hints[@]} > 5 )) && hints=("${hints[@]:0:5}")
 
   # Row 2: status on the left, first hint right-aligned.
@@ -149,7 +149,7 @@ _header_bar() {
 _breadcrumb_row() {
   local trail="${C_MUTED}Main${C_RESET}"
   local b
-  for b in "${BREADCRUMBS[@]}"; do
+  for b in ${BREADCRUMBS[@]+"${BREADCRUMBS[@]}"}; do
     trail+="${C_MUTED} › ${C_RESET}${C_PRIMARY}${b}${C_RESET}"
   done
   printf ' %s' "$trail"
@@ -689,7 +689,7 @@ choose_menu() {
 
     # Custom keybindings registered by the caller (PICKER_BINDS).
     local _bind _bind_key _bind_action _matched_bind=0
-    for _bind in "${PICKER_BINDS[@]}"; do
+    for _bind in ${PICKER_BINDS[@]+"${PICKER_BINDS[@]}"}; do
       _bind_key="${_bind%%:*}"
       _bind_action="${_bind#*:}"
       if [[ "$key" == "$_bind_key" ]]; then
@@ -721,7 +721,7 @@ choose_menu() {
 # the current screen's keyhints. Any keystroke dismisses it.
 show_help_overlay() {
   push_breadcrumb "Help"
-  local _prev_hints=("${KEYHINTS[@]}")
+  local _prev_hints=(${KEYHINTS[@]+"${KEYHINTS[@]}"})
   set_keyhints "esc back"
   draw_chrome
   clear_content
@@ -764,6 +764,6 @@ show_help_overlay() {
   read -rsn1 _ < /dev/tty 2>/dev/null || true
 
   pop_breadcrumb
-  KEYHINTS=("${_prev_hints[@]}")
+  KEYHINTS=(${_prev_hints[@]+"${_prev_hints[@]}"})
   draw_chrome
 }
