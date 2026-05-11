@@ -83,7 +83,10 @@ main() {
       "Database|tunnel via socat pod" \
       "AWS|sso · eks · s3" \
       "Exit" || rc=$?
-    ((rc >= 1)) && break
+    # rc=1 = ESC / q (cancel). At the root menu we treat this as a no-op
+    # — quit is only via Ctrl+C (rc=2), the explicit Exit item, or :q.
+    ((rc >= 2)) && break
+    (( rc == 1 )) && continue
 
     if [[ "$PICKER_RESULT_KIND" == "action" ]]; then
       case "$PICKER_RESULT_VALUE" in
