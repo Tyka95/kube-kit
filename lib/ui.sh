@@ -42,9 +42,18 @@ clear_breadcrumbs() {
 PICKER_POSITION=""
 
 # Chrome state — drives the border color.
-# Values: idle | active | busy. set_chrome_state is wired in Task 12.
+# Values: idle | active | busy.
 CHROME_STATE="idle"
 CHROME_BORDER_COLOR="$C_MUTED"
+
+set_chrome_state() {
+  CHROME_STATE="$1"
+  case "$1" in
+    idle)   CHROME_BORDER_COLOR="$C_MUTED" ;;
+    active) CHROME_BORDER_COLOR="$C_ACCENT" ;;
+    busy)   CHROME_BORDER_COLOR="$C_WARN" ;;
+  esac
+}
 
 # Resize detection — polling-based (bash 3.2 loses SIGWINCH during subshells)
 _WINCH_FLAG=0
@@ -266,6 +275,9 @@ choose_menu() {
   PICKER_RESULT_KIND=""
   PICKER_RESULT_VALUE=""
 
+  set_chrome_state "active"
+  _redraw_footer
+
   for item in "${raw_items[@]}"; do
     if [[ "$item" == *"|"* ]]; then
       local _lbl="${item%%|*}"
@@ -447,7 +459,7 @@ choose_menu() {
   local _old_stty
   _old_stty=$(stty -g </dev/tty 2>/dev/null) || true
   stty -echo -icanon min 0 time 1 </dev/tty 2>/dev/null || true
-  trap 'SPINNER_ROW=0; stty "$_old_stty" </dev/tty 2>/dev/null; printf "\033[?25h" >&3' RETURN
+  trap 'SPINNER_ROW=0; set_chrome_state idle; _redraw_footer; stty "$_old_stty" </dev/tty 2>/dev/null; printf "\033[?25h" >&3' RETURN
 
   # _readkey: read up to 4 bytes from tty, return as hex string in _HEX.
   # Reads all available bytes in a single perl call to avoid escape sequence splitting.

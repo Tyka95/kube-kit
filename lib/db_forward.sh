@@ -78,6 +78,19 @@ _discover_db_targets() {
   args+=(--region "$AWS_SESSION_REGION" --output text)
   args+=(--cli-connect-timeout 3 --cli-read-timeout 8)
 
+  # Signal busy state on the chrome border while we're hitting AWS.
+  local _prev_chrome="$CHROME_STATE"
+  if declare -F set_chrome_state &>/dev/null; then
+    set_chrome_state "busy"
+    _redraw_footer || true
+  fi
+  _reset_chrome() {
+    if declare -F set_chrome_state &>/dev/null; then
+      set_chrome_state "$_prev_chrome"
+      _redraw_footer || true
+    fi
+  }
+
   local clusters instances err_file rc=0
   err_file=$(mktemp)
 
@@ -86,6 +99,7 @@ _discover_db_targets() {
   if (( rc != 0 )); then
     DB_CACHE_ERROR=$(head -n1 "$err_file" 2>/dev/null)
     rm -f "$err_file"
+    _reset_chrome
     return 1
   fi
 
@@ -94,6 +108,7 @@ _discover_db_targets() {
   if (( rc != 0 )); then
     DB_CACHE_ERROR=$(head -n1 "$err_file" 2>/dev/null)
     rm -f "$err_file"
+    _reset_chrome
     return 1
   fi
   rm -f "$err_file"
@@ -122,6 +137,7 @@ _discover_db_targets() {
   DB_CACHE_REGION="$AWS_SESSION_REGION"
   DB_CACHE_TS="$now"
   DB_CACHE_ERROR=""
+  _reset_chrome
   return 0
 }
 
