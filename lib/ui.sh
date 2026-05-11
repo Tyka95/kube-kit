@@ -44,13 +44,34 @@ _footer_bar() {
     _ftr+="${C_RED}⎈${C_RESET} no cluster"
   fi
   _ftr+="  ${C_DIM}│${C_RESET}  ${C_CYAN}⬡${C_RESET} ${_CTX_NS:-default}"
-  if [[ -n "$_CTX_AWS_PROFILE" ]]; then
-    _ftr+="  ${C_DIM}│${C_RESET}  ${C_CYAN}☁${C_RESET} ${_CTX_AWS_PROFILE}"
-    if [[ "$_CTX_AWS_EXPIRY" == "expired" ]]; then
-      _ftr+="  ${C_RED}⏱ expired${C_RESET}"
-    elif [[ -n "$_CTX_AWS_EXPIRY" ]]; then
-      _ftr+="  ${C_GREEN}⏱ ${_CTX_AWS_EXPIRY}${C_RESET}"
-    fi
+  if [[ -n "$AWS_SESSION_PROFILE" || "$AWS_SESSION_STATUS" != "unknown" ]]; then
+    _ftr+="  ${C_DIM}│${C_RESET}  ${C_CYAN}☁${C_RESET} ${AWS_SESSION_PROFILE:-<none>}"
+    local _ctx_acct _glyph _detail
+    _ctx_acct=$(aws_session_context_account)
+    case "$AWS_SESSION_STATUS" in
+      ok)
+        if [[ -n "$_ctx_acct" && -n "$AWS_SESSION_ACCOUNT" && "$_ctx_acct" != "$AWS_SESSION_ACCOUNT" ]]; then
+          _glyph="${C_YELLOW}⚠${C_RESET}"
+          _detail="${C_YELLOW}mismatch ⟶ ${_ctx_acct}${C_RESET}"
+        else
+          _glyph="${C_GREEN}✓${C_RESET}"
+          _detail="${C_DIM}${AWS_SESSION_ACCOUNT}${C_RESET}"
+        fi
+        ;;
+      expired)
+        _glyph="${C_RED}✗${C_RESET}"
+        _detail="${C_RED}expired${C_RESET}"
+        ;;
+      no-aws)
+        _glyph="${C_DIM}–${C_RESET}"
+        _detail="${C_DIM}no aws${C_RESET}"
+        ;;
+      *)
+        _glyph="${C_DIM}…${C_RESET}"
+        _detail="${C_DIM}validating${C_RESET}"
+        ;;
+    esac
+    _ftr+=" ${_glyph} ${_detail}"
   fi
   printf '%s%s%s\n' "$C_DIM" "$border" "$C_RESET"
   printf ' %s' "$_ftr"
