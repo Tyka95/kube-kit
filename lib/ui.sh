@@ -483,10 +483,10 @@ choose_menu() {
   _draw
 
   # Set raw input mode once; restore on return
-  local _old_stty
-  _old_stty=$(stty -g </dev/tty 2>/dev/null) || true
+  local _old_stty=""
+  _old_stty=$(stty -g </dev/tty 2>/dev/null) || _old_stty=""
   stty -echo -icanon min 0 time 1 </dev/tty 2>/dev/null || true
-  trap 'SPINNER_ROW=0; set_chrome_state idle; _redraw_footer; stty "$_old_stty" </dev/tty 2>/dev/null; printf "\033[?25h" >&3' RETURN
+  trap 'SPINNER_ROW=0; set_chrome_state idle; _redraw_footer; stty "${_old_stty:-}" </dev/tty 2>/dev/null; printf "\033[?25h" >&3' RETURN
 
   # _readkey: read up to 4 bytes from tty, return as hex string in _HEX.
   # Uses perl because bash 3.2 (macOS default) doesn't support fractional
@@ -687,14 +687,14 @@ choose_menu() {
             PICKER_RESULT_KIND="action"
             PICKER_RESULT_VALUE="__quit__"
             printf '\033[?25h' >&3
-            if [[ -n "$_old_stty" ]]; then stty "$_old_stty" </dev/tty 2>/dev/null || true; fi
+            if [[ -n "${_old_stty:-}" ]]; then stty "${_old_stty:-}" </dev/tty 2>/dev/null || true; fi
             return 0
             ;;
           __help__)
             PICKER_RESULT_KIND="action"
             PICKER_RESULT_VALUE="__help__"
             printf '\033[?25h' >&3
-            if [[ -n "$_old_stty" ]]; then stty "$_old_stty" </dev/tty 2>/dev/null || true; fi
+            if [[ -n "${_old_stty:-}" ]]; then stty "${_old_stty:-}" </dev/tty 2>/dev/null || true; fi
             return 0
             ;;
           *)
@@ -715,7 +715,7 @@ choose_menu() {
       PICKER_RESULT_KIND="action"
       PICKER_RESULT_VALUE="__help__"
       printf '\033[?25h' >&3
-      if [[ -n "$_old_stty" ]]; then stty "$_old_stty" </dev/tty 2>/dev/null || true; fi
+      if [[ -n "${_old_stty:-}" ]]; then stty "${_old_stty:-}" </dev/tty 2>/dev/null || true; fi
       return 0
     fi
 
@@ -729,7 +729,7 @@ choose_menu() {
         PICKER_RESULT_VALUE="$_bind_action"
         PICKER_BINDS=()
         printf '\033[?25h' >&3
-        if [[ -n "$_old_stty" ]]; then stty "$_old_stty" </dev/tty 2>/dev/null || true; fi
+        if [[ -n "${_old_stty:-}" ]]; then stty "${_old_stty:-}" </dev/tty 2>/dev/null || true; fi
         return 0
       fi
     done
