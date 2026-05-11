@@ -369,19 +369,27 @@ choose_menu() {
     # the breadcrumb. Long-running flows can flip SPINNER_ROW themselves.
     SPINNER_ROW=0
 
+    # When a filter is active, the first content row shows the filter, and
+    # the list slides down by one. Otherwise the list starts at row_start.
+    local _list_start=$row_start
+    if [[ -n "$_filter" ]]; then
+      _list_start=$((row_start + 1))
+    fi
+
     {
-      # Filter indicator (only when active). Sits one row above the list.
-      printf '\033[%d;1H\033[2K' "$((row_start - 1))"
+      # Clear the filter indicator row regardless of state so a freshly
+      # emptied filter doesn't leave its label behind.
+      printf '\033[%d;1H\033[2K' "$row_start"
       if [[ -n "$_filter" ]]; then
         printf '  %s/%s %s%s%s' "$C_ACCENT" "$C_RESET" "$C_PRIMARY" "$_filter" "$C_RESET"
       fi
 
       if ((count == 0)); then
-        printf '\033[%d;1H\033[2K  %sno matches%s' "$row_start" "$C_MUTED" "$C_RESET"
+        printf '\033[%d;1H\033[2K  %sno matches%s' "$_list_start" "$C_MUTED" "$C_RESET"
       fi
 
-      local row=$row_start
-      local vis_row idx lbl desc meta
+      local row=$_list_start
+      local vis_row idx lbl desc meta plain_text
       local lbl_pad desc_pad meta_pad
       for ((vis_row = 0; vis_row < visible; vis_row++)); do
         idx=$((scroll + vis_row))
@@ -391,7 +399,6 @@ choose_menu() {
         desc="${descs[$idx]:0:_DESC_W}"
         meta="${metas[$idx]:0:_META_W}"
 
-        # Left-pad label/desc to their natural widths; right-align meta.
         lbl_pad="$lbl"
         while (( ${#lbl_pad}  < _LBL_W  )); do lbl_pad+=" "; done
         desc_pad="$desc"
@@ -402,31 +409,27 @@ choose_menu() {
         while (( ${#meta_pad} < _mp )); do meta_pad+=" "; done
         meta_pad+="$meta"
 
+        # Build the plain (un-colored) row text once, ASCII-only, so we can
+        # color the whole row uniformly without worrying about UTF-8 boundary
+        # artifacts. Two-space prefix; selected row gets '> ' instead.
+        local prefix="  "
+        (( idx == sel )) && prefix="> "
+        plain_text="${prefix}${lbl_pad}   ${desc_pad}"
+        [[ -n "$meta" ]] && plain_text+="   ${meta_pad}"
+
+        # Move + clear-to-eol + paint.
+        printf '\033[%d;1H\033[2K' "$row"
         if (( idx == sel )); then
-          # Subtle selection: accent stripe + reverse on label only.
-          printf '\033[%d;1H\033[2K %s▍%s %s%s%s%s%s   %s%s%s' \
-            "$row" \
-            "$C_ACCENT" "$C_RESET" \
-            "$C_REVERSE" "$C_PRIMARY" "$lbl_pad" "$C_RESET" \
-            ""           "$C_MUTED"  "$desc_pad" "$C_RESET"
-          if [[ -n "$meta" ]]; then
-            printf '   %s%s%s' "$C_MUTED" "$meta_pad" "$C_RESET"
-          fi
+          printf '%s%s%s' "$C_REVERSE" "$plain_text" "$C_RESET"
         else
-          printf '\033[%d;1H\033[2K   %s%s%s   %s%s%s' \
-            "$row" \
-            "$C_PRIMARY" "$lbl_pad"  "$C_RESET" \
-            "$C_MUTED"   "$desc_pad" "$C_RESET"
-          if [[ -n "$meta" ]]; then
-            printf '   %s%s%s' "$C_MUTED" "$meta_pad" "$C_RESET"
-          fi
+          printf '%s%s%s' "$C_PRIMARY" "$plain_text" "$C_RESET"
         fi
 
         row=$((row + 1))
       done
 
       # Clear remaining lines in content area.
-      local _clear_from=$((row_start + visible))
+      local _clear_from=$((_list_start + visible))
       local _clear_to=$((TERM_H - 4))
       for ((i = _clear_from; i <= _clear_to; i++)); do
         printf '\033[%d;1H\033[2K' "$i"
