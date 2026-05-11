@@ -241,40 +241,66 @@ clear_content() {
   printf '\033[%d;1H' "$top" >&3
 }
 
+# Custom keybindings for the next choose_menu invocation. Each entry is
+# "<key>:<action>". choose_menu consumes and clears this on entry.
+PICKER_BINDS=()
+
+# Result emitted by choose_menu.
+#   PICKER_RESULT_KIND=select  + PICKER_RESULT_VALUE=<label>  on Enter
+#   PICKER_RESULT_KIND=action  + PICKER_RESULT_VALUE=<action> on custom key
+#   PICKER_RESULT_KIND=cancel  + PICKER_RESULT_VALUE=""       on q / esc / non-zero return
+PICKER_RESULT_KIND=""
+PICKER_RESULT_VALUE=""
+
 # ── Menu chooser ──────────────────────────────────────────────────────────────
-# Items: "label" or "label|description"
-# Returns: 0=selected (label on stdout), 1=back, 2=quit
+# Items: "label", "label|description", or "label|description|metadata"
+# Returns: 0=selected, 1=back, 2=quit
+# Sets PICKER_RESULT_KIND and PICKER_RESULT_VALUE on all exits.
 
 choose_menu() {
   local title="$1"; shift
   local raw_items=("$@")
-  local all_labels=() all_descs=()
+  local all_labels=() all_descs=() all_metas=()
   local total=${#raw_items[@]}
+
+  PICKER_RESULT_KIND=""
+  PICKER_RESULT_VALUE=""
 
   for item in "${raw_items[@]}"; do
     if [[ "$item" == *"|"* ]]; then
-      all_labels+=("${item%%|*}")
-      all_descs+=("${item#*|}")
+      local _lbl="${item%%|*}"
+      local _rest="${item#*|}"
+      if [[ "$_rest" == *"|"* ]]; then
+        all_labels+=("$_lbl")
+        all_descs+=("${_rest%%|*}")
+        all_metas+=("${_rest#*|}")
+      else
+        all_labels+=("$_lbl")
+        all_descs+=("$_rest")
+        all_metas+=("")
+      fi
     else
       all_labels+=("$item")
       all_descs+=("")
+      all_metas+=("")
     fi
   done
 
   # Filter state
   local _filter=""
-  local labels=() descs=() _fidx=()  # filtered views
+  local labels=() descs=() metas=() _fidx=()  # filtered views
   local count=0 sel=0 scroll=0
 
   # Rebuild filtered item arrays from _filter
   _apply_filter() {
-    labels=(); descs=(); _fidx=()
+    labels=(); descs=(); metas=(); _fidx=()
     local _filt_lower
     _filt_lower=$(echo "$_filter" | tr 'A-Z' 'a-z')
     for ((i = 0; i < total; i++)); do
       if [[ -z "$_filter" ]]; then
         labels+=("${all_labels[$i]}")
         descs+=("${all_descs[$i]}")
+        metas+=("${all_metas[$i]}")
         _fidx+=("$i")
       else
         local _lbl_lower
@@ -282,6 +308,7 @@ choose_menu() {
         if [[ "$_lbl_lower" == *"$_filt_lower"* ]]; then
           labels+=("${all_labels[$i]}")
           descs+=("${all_descs[$i]}")
+          metas+=("${all_metas[$i]}")
           _fidx+=("$i")
         fi
       fi
@@ -298,6 +325,8 @@ choose_menu() {
   local visible=$((count < max_visible ? count : max_visible))
 
   printf '\033[?25l' >&3
+
+  local row_start=$((HEADER_ROWS + 3))
 
   _draw() {
     ((count == 0)) && visible=0
@@ -334,63 +363,61 @@ choose_menu() {
       SPINNER_COL=$((${#_title_text} + 1))
       printf '\033[K\n'
 
-      # Compute max label length for aligned descriptions
-      local _max_label=0
-      for ((i = 0; i < count; i++)); do
-        local _ll=${#labels[$i]}
-        ((_ll > _max_label)) && _max_label=$_ll
-      done
-
-      # Items — also store text+rows for shimmer
-      SHIMMER_TEXTS=()
-      SHIMMER_ROWS=()
-      SHIMMER_SEL_IDX=-1
-      SHIMMER_POS=-1
-      SHIMMER_WAIT=0
-      SHIMMER_DIR=1
-
       if ((count == 0)); then
         printf '\033[K  %sno matches%s\n' "$C_MUTED" "$C_RESET"
       fi
 
-      for ((i = 0; i < visible; i++)); do
-        local idx=$((scroll + i))
-        local item_row=$((6 + i))
-        local full_line=""
-        local _lbl="${labels[$idx]}"
-        local _pad=$((_max_label - ${#_lbl}))
-        local _padding=""
-        for ((_pi = 0; _pi < _pad; _pi++)); do _padding+=" "; done
-        printf '\033[K'
-        if ((idx == sel)); then
-          full_line="   ❯ ${_lbl}${_padding}"
-          local _desc_start=${#full_line}
-          [[ -n "${descs[$idx]}" ]] && full_line+="  ${descs[$idx]}"
-          printf '  %s ❯ %s%s%s' "$C_PRIMARY" "$_lbl" "$_padding" "$C_RESET"
-          if [[ -n "${descs[$idx]}" ]]; then
-            printf '  %s%s%s' "$C_ACCENT" "${descs[$idx]}" "$C_RESET"
-          fi
-          printf '\n'
-          SHIMMER_SEL_IDX=$i
-          SHIMMER_DESC_START=$_desc_start
+      local row=$row_start
+      local vis_row idx lbl desc meta
+      local lbl_w desc_w meta_w lbl_show desc_show meta_show meta_padded mp row_text
+      for ((vis_row = 0; vis_row < visible; vis_row++)); do
+        idx=$((scroll + vis_row))
+        (( idx >= count )) && break
+
+        lbl="${labels[$idx]}"
+        desc="${descs[$idx]}"
+        meta="${metas[$idx]:-}"
+
+        # Column budgets: label 25%, desc 45%, meta 20%, gutters ~10%.
+        lbl_w=$((TERM_W / 4))
+        desc_w=$((TERM_W * 45 / 100))
+        meta_w=$((TERM_W / 5))
+        (( lbl_w  < 14 )) && lbl_w=14
+        (( desc_w <  0 )) && desc_w=0
+        (( meta_w <  0 )) && meta_w=0
+
+        lbl_show="${lbl:0:lbl_w}"
+        desc_show="${desc:0:desc_w}"
+        meta_show="${meta:0:meta_w}"
+        while (( ${#lbl_show}  < lbl_w  )); do lbl_show+=" "; done
+        while (( ${#desc_show} < desc_w )); do desc_show+=" "; done
+        meta_padded=""
+        mp=$((meta_w - ${#meta_show}))
+        (( mp < 0 )) && mp=0
+        while (( ${#meta_padded} < mp )); do meta_padded+=" "; done
+        meta_padded+="$meta_show"
+
+        row_text=" ${lbl_show}  ${desc_show}  ${meta_padded}"
+
+        if (( idx == sel )); then
+          # Full-row reverse-video selection indicator.
+          printf '\033[%d;1H\033[2K%s%s%s' "$row" "$C_REVERSE" "$row_text" "$C_RESET"
         else
-          full_line="     ${_lbl}${_padding}"
-          [[ -n "${descs[$idx]}" ]] && full_line+="  ${descs[$idx]}"
-          printf '  %s   %s%s%s' "$C_MUTED" "$_lbl" "$_padding" "$C_RESET"
-          if [[ -n "${descs[$idx]}" ]]; then
-            printf '  %s%s%s' "$C_MUTED" "${descs[$idx]}" "$C_RESET"
-          fi
-          printf '\n'
+          printf '\033[%d;1H\033[2K %s%s%s   %s%s%s   %s%s%s' \
+            "$row" \
+            "$C_PRIMARY" "$lbl_show"  "$C_RESET" \
+            "$C_MUTED"   "$desc_show" "$C_RESET" \
+            "$C_MUTED"   "$meta_padded" "$C_RESET"
         fi
-        SHIMMER_TEXTS+=("$full_line")
-        SHIMMER_ROWS+=("$item_row")
+
+        row=$((row + 1))
       done
 
       # Clear remaining lines in content area
-      local _clear_from=$((6 + visible))
+      local _clear_from=$((row_start + visible))
       local _clear_to=$((TERM_H - 3))
       for ((i = _clear_from; i <= _clear_to; i++)); do
-        printf '\033[K\n'
+        printf '\033[%d;1H\033[2K' "$i"
       done
 
       # Hint bar
@@ -404,10 +431,14 @@ choose_menu() {
           "$C_ACCENT" "$C_MUTED" "$C_ACCENT" "$C_MUTED" "$C_ACCENT" "$C_MUTED" "$C_ACCENT" "$C_MUTED" "$C_ACCENT" "$C_MUTED" "$C_ACCENT" "$C_RESET"
       fi
 
-      # Footer pinned at bottom
-      printf '\033[%d;1H' "$((TERM_H - 1))"
-      _footer_bar
+      # Update picker position for footer
+      if (( count > 0 )); then
+        PICKER_POSITION="$((sel + 1)) of ${count}"
+      else
+        PICKER_POSITION=""
+      fi
     } >&3
+    _redraw_footer
   }
 
   _draw
@@ -416,7 +447,7 @@ choose_menu() {
   local _old_stty
   _old_stty=$(stty -g </dev/tty 2>/dev/null) || true
   stty -echo -icanon min 0 time 1 </dev/tty 2>/dev/null || true
-  trap 'SPINNER_ROW=0; SHIMMER_SEL_IDX=-1; stty "$_old_stty" </dev/tty 2>/dev/null; printf "\033[?25h" >&3' RETURN
+  trap 'SPINNER_ROW=0; stty "$_old_stty" </dev/tty 2>/dev/null; printf "\033[?25h" >&3' RETURN
 
   # _readkey: read up to 4 bytes from tty, return as hex string in _HEX.
   # Reads all available bytes in a single perl call to avoid escape sequence splitting.
@@ -467,8 +498,7 @@ choose_menu() {
       done
       _prev_w=$TERM_W; _prev_h=$TERM_H
       # Invalidate animation state
-      SPINNER_ROW=0; SHIMMER_SEL_IDX=-1
-      SHIMMER_TEXTS=(); SHIMMER_ROWS=()
+      SPINNER_ROW=0
       # Fresh alt screen buffer + recalculate layout (full reset for iTerm2)
       draw_chrome_reset
       max_visible=$((TERM_H - 9))
@@ -481,20 +511,57 @@ choose_menu() {
       continue
     fi
     local key="$_HEX"
+    local old_sel=$sel
 
     # Arrow keys: 1b5b41=up, 1b5b42=down, 1b5b43=right, 1b5b44=left
     case "$key" in
-      1b5b41) if ((count > 0)); then if ((sel > 0)); then ((sel--)); else sel=$((count - 1)); fi; _draw; fi; continue ;;
-      1b5b42) if ((count > 0)); then if ((sel < count - 1)); then ((sel++)); else sel=0; fi; _draw; fi; continue ;;
-      1b5b43) if ((count > 0)); then _select_flash "$((6 + sel - scroll))" "${labels[$sel]}"; echo "${labels[$sel]}"; return 0; fi; continue ;;
-      1b5b44) if [[ -n "$_filter" ]]; then _filter=""; _apply_filter; visible=$((count < max_visible ? count : max_visible)); _draw; continue; fi; return 1 ;;
-      1b*)    if [[ -n "$_filter" ]]; then _filter=""; _apply_filter; visible=$((count < max_visible ? count : max_visible)); _draw; continue; fi; return 1 ;;
+      1b5b41)
+        if ((count > 0)); then
+          if ((sel > 0)); then ((sel--)); else sel=$((count - 1)); fi
+          _draw
+          if (( sel != old_sel )); then
+            _shimmer_pulse "$((row_start + (sel - scroll)))" " ${labels[$sel]}" || true
+          fi
+        fi
+        continue ;;
+      1b5b42)
+        if ((count > 0)); then
+          if ((sel < count - 1)); then ((sel++)); else sel=0; fi
+          _draw
+          if (( sel != old_sel )); then
+            _shimmer_pulse "$((row_start + (sel - scroll)))" " ${labels[$sel]}" || true
+          fi
+        fi
+        continue ;;
+      1b5b43)
+        if ((count > 0)); then
+          PICKER_RESULT_KIND="select"
+          PICKER_RESULT_VALUE="${labels[$sel]}"
+          echo "${labels[$sel]}"
+          return 0
+        fi
+        continue ;;
+      1b5b44)
+        if [[ -n "$_filter" ]]; then
+          _filter=""; _apply_filter; visible=$((count < max_visible ? count : max_visible)); _draw; continue
+        fi
+        PICKER_RESULT_KIND="cancel"
+        PICKER_RESULT_VALUE=""
+        return 1 ;;
+      1b*)
+        if [[ -n "$_filter" ]]; then
+          _filter=""; _apply_filter; visible=$((count < max_visible ? count : max_visible)); _draw; continue
+        fi
+        PICKER_RESULT_KIND="cancel"
+        PICKER_RESULT_VALUE=""
+        return 1 ;;
     esac
 
     # 0a = LF (Enter), 0d = CR
     if [[ "$key" == "0a" || "$key" == "0d" ]]; then
       if ((count > 0)); then
-        _select_flash "$((6 + sel - scroll))" "${labels[$sel]}"
+        PICKER_RESULT_KIND="select"
+        PICKER_RESULT_VALUE="${labels[$sel]}"
         echo "${labels[$sel]}"
         return 0
       fi
@@ -514,12 +581,16 @@ choose_menu() {
 
     # 03 = Ctrl+C
     if [[ "$key" == "03" ]]; then
+      PICKER_RESULT_KIND="cancel"
+      PICKER_RESULT_VALUE=""
       return 2
     fi
 
     # q = 71, c = 63 — commands when filter is empty, filter chars when active
     if [[ "$key" == "71" ]]; then
       if [[ -z "$_filter" ]]; then
+        PICKER_RESULT_KIND="cancel"
+        PICKER_RESULT_VALUE=""
         return 2
       fi
     fi
@@ -537,6 +608,21 @@ choose_menu() {
       _draw
       continue
     fi
+
+    # Custom keybindings registered by the caller (PICKER_BINDS).
+    local _bind _bind_key _bind_action _matched_bind=0
+    for _bind in "${PICKER_BINDS[@]}"; do
+      _bind_key="${_bind%%:*}"
+      _bind_action="${_bind#*:}"
+      if [[ "$key" == "$_bind_key" ]]; then
+        PICKER_RESULT_KIND="action"
+        PICKER_RESULT_VALUE="$_bind_action"
+        PICKER_BINDS=()
+        printf '\033[?25h' >&3
+        if [[ -n "$_old_stty" ]]; then stty "$_old_stty" </dev/tty 2>/dev/null || true; fi
+        return 0
+      fi
+    done
 
     # Printable ASCII (hex 20-7e) → append to filter
     local _dec
