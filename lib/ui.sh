@@ -482,37 +482,37 @@ choose_menu() {
   }
 
   local _prev_w=$TERM_W _prev_h=$TERM_H
+  local _resize_check_tick=0
 
-  while true; do
-    # Poll-based resize detection (every _readkey timeout = ~100ms)
+  # Check terminal size only after real input or every ~20 polls (~10s).
+  # Polling stty+awk every iteration was the constantly-flashing "bash awk"
+  # the user saw in process monitors.
+  _maybe_handle_resize() {
     _refresh_term_size
     if ((TERM_W != _prev_w || TERM_H != _prev_h)); then
-      # Debounce: wait for resize to stop
-      local _stable=0
-      while ((_stable < 2)); do
-        sleep 0.15
-        local _w=$TERM_W _h=$TERM_H
-        _refresh_term_size
-        if ((TERM_W == _w && TERM_H == _h)); then
-          ((_stable++))
-        else
-          _stable=0
-        fi
-      done
       _prev_w=$TERM_W; _prev_h=$TERM_H
-      # Invalidate animation state
       SPINNER_ROW=0
-      # Fresh alt screen buffer + recalculate layout (full reset for iTerm2)
       draw_chrome_reset
       max_visible=$((TERM_H - 9))
       ((max_visible < 3)) && max_visible=3
       visible=$((count < max_visible ? count : max_visible))
       _draw
     fi
+  }
+
+  while true; do
     if ! _readkey; then
       _tick || true
+      # Only stat the terminal occasionally while idle.
+      _resize_check_tick=$((_resize_check_tick + 1))
+      if (( _resize_check_tick >= 20 )); then
+        _resize_check_tick=0
+        _maybe_handle_resize
+      fi
       continue
     fi
+    # On real input, refresh size cheaply so reflows are seen promptly.
+    _maybe_handle_resize
     local key="$_HEX"
     local old_sel=$sel
 
