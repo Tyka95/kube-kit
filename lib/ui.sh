@@ -340,6 +340,21 @@ choose_menu() {
 
   local row_start=$((HEADER_ROWS + 3))
 
+  # Compute natural column widths once per draw based on the visible items.
+  _measure_cols() {
+    _LBL_W=0; _DESC_W=0; _META_W=0
+    local i ll ld lm
+    for ((i = 0; i < count; i++)); do
+      ll=${#labels[$i]};      (( ll > _LBL_W  )) && _LBL_W=$ll
+      ld=${#descs[$i]};       (( ld > _DESC_W )) && _DESC_W=$ld
+      lm=${#metas[$i]};       (( lm > _META_W )) && _META_W=$lm
+    done
+    # Apply sensible caps so absurdly long values don't blow out the row.
+    (( _LBL_W  > 40 )) && _LBL_W=40
+    (( _DESC_W > 60 )) && _DESC_W=60
+    (( _META_W > 24 )) && _META_W=24
+  }
+
   _draw() {
     ((count == 0)) && visible=0
     ((count > 0 && visible == 0)) && visible=1
@@ -348,102 +363,74 @@ choose_menu() {
     ((sel >= scroll + visible)) && scroll=$((sel - visible + 1))
     ((scroll < 0)) && scroll=0
 
-    {
-      # Content starts at row 3 (after 2-line header: border + title)
-      printf '\033[3;1H'
+    _measure_cols
+    SPINNER_ROW=$((row_start - 1))
+    SPINNER_COL=4
 
-      # Breadcrumb + title + optional filter indicator
-      printf '\033[K\n'
+    {
+      # Filter indicator (only when active). Sits one row above the list.
+      printf '\033[%d;1H\033[2K' "$((row_start - 1))"
       if [[ -n "$_filter" ]]; then
-        if [[ -n "$BREADCRUMB" ]]; then
-          local _title_text="  ⎈  ${BREADCRUMB} › ${title}  / ${_filter} "
-          printf '\033[K  %s⎈  %s%s › %s%s  %s/ %s%s\n' \
-            "$C_MUTED" "$BREADCRUMB" "$C_RESET" "$C_ACCENT" "$title" "$C_WARN" "$_filter" "$C_RESET"
-        else
-          local _title_text="  ⎈  ${title}  / ${_filter} "
-          printf '\033[K  %s⎈  %s  %s/ %s%s\n' \
-            "$C_ACCENT" "$title" "$C_WARN" "$_filter" "$C_RESET"
-        fi
-      elif [[ -n "$BREADCRUMB" ]]; then
-        local _title_text="  ⎈  ${BREADCRUMB} › ${title} "
-        printf '\033[K  %s⎈  %s%s › %s%s %s\n' "$C_MUTED" "$BREADCRUMB" "$C_RESET" "$C_ACCENT" "$title" "$C_RESET"
-      else
-        local _title_text="  ⎈  ${title} "
-        printf '\033[K  %s⎈  %s %s\n' "$C_ACCENT" "$title" "$C_RESET"
+        printf '  %s/%s %s%s%s' "$C_ACCENT" "$C_RESET" "$C_PRIMARY" "$_filter" "$C_RESET"
       fi
-      SPINNER_ROW=4
-      SPINNER_COL=$((${#_title_text} + 1))
-      printf '\033[K\n'
 
       if ((count == 0)); then
-        printf '\033[K  %sno matches%s\n' "$C_MUTED" "$C_RESET"
+        printf '\033[%d;1H\033[2K  %sno matches%s' "$row_start" "$C_MUTED" "$C_RESET"
       fi
 
       local row=$row_start
       local vis_row idx lbl desc meta
-      local lbl_w desc_w meta_w lbl_show desc_show meta_show meta_padded mp row_text
+      local lbl_pad desc_pad meta_pad
       for ((vis_row = 0; vis_row < visible; vis_row++)); do
         idx=$((scroll + vis_row))
         (( idx >= count )) && break
 
-        lbl="${labels[$idx]}"
-        desc="${descs[$idx]}"
-        meta="${metas[$idx]:-}"
+        lbl="${labels[$idx]:0:_LBL_W}"
+        desc="${descs[$idx]:0:_DESC_W}"
+        meta="${metas[$idx]:0:_META_W}"
 
-        # Column budgets: label 25%, desc 45%, meta 20%, gutters ~10%.
-        lbl_w=$((TERM_W / 4))
-        desc_w=$((TERM_W * 45 / 100))
-        meta_w=$((TERM_W / 5))
-        (( lbl_w  < 14 )) && lbl_w=14
-        (( desc_w <  0 )) && desc_w=0
-        (( meta_w <  0 )) && meta_w=0
-
-        lbl_show="${lbl:0:lbl_w}"
-        desc_show="${desc:0:desc_w}"
-        meta_show="${meta:0:meta_w}"
-        while (( ${#lbl_show}  < lbl_w  )); do lbl_show+=" "; done
-        while (( ${#desc_show} < desc_w )); do desc_show+=" "; done
-        meta_padded=""
-        mp=$((meta_w - ${#meta_show}))
-        (( mp < 0 )) && mp=0
-        while (( ${#meta_padded} < mp )); do meta_padded+=" "; done
-        meta_padded+="$meta_show"
-
-        row_text=" ${lbl_show}  ${desc_show}  ${meta_padded}"
+        # Left-pad label/desc to their natural widths; right-align meta.
+        lbl_pad="$lbl"
+        while (( ${#lbl_pad}  < _LBL_W  )); do lbl_pad+=" "; done
+        desc_pad="$desc"
+        while (( ${#desc_pad} < _DESC_W )); do desc_pad+=" "; done
+        meta_pad=""
+        local _mp=$((_META_W - ${#meta}))
+        (( _mp < 0 )) && _mp=0
+        while (( ${#meta_pad} < _mp )); do meta_pad+=" "; done
+        meta_pad+="$meta"
 
         if (( idx == sel )); then
-          # Full-row reverse-video selection indicator.
-          printf '\033[%d;1H\033[2K%s%s%s' "$row" "$C_REVERSE" "$row_text" "$C_RESET"
-        else
-          printf '\033[%d;1H\033[2K %s%s%s   %s%s%s   %s%s%s' \
+          # Subtle selection: accent stripe + reverse on label only.
+          printf '\033[%d;1H\033[2K %s▍%s %s%s%s%s%s   %s%s%s' \
             "$row" \
-            "$C_PRIMARY" "$lbl_show"  "$C_RESET" \
-            "$C_MUTED"   "$desc_show" "$C_RESET" \
-            "$C_MUTED"   "$meta_padded" "$C_RESET"
+            "$C_ACCENT" "$C_RESET" \
+            "$C_REVERSE" "$C_PRIMARY" "$lbl_pad" "$C_RESET" \
+            ""           "$C_MUTED"  "$desc_pad" "$C_RESET"
+          if [[ -n "$meta" ]]; then
+            printf '   %s%s%s' "$C_MUTED" "$meta_pad" "$C_RESET"
+          fi
+        else
+          printf '\033[%d;1H\033[2K   %s%s%s   %s%s%s' \
+            "$row" \
+            "$C_PRIMARY" "$lbl_pad"  "$C_RESET" \
+            "$C_MUTED"   "$desc_pad" "$C_RESET"
+          if [[ -n "$meta" ]]; then
+            printf '   %s%s%s' "$C_MUTED" "$meta_pad" "$C_RESET"
+          fi
         fi
 
         row=$((row + 1))
       done
 
-      # Clear remaining lines in content area
+      # Clear remaining lines in content area.
       local _clear_from=$((row_start + visible))
-      local _clear_to=$((TERM_H - 3))
+      local _clear_to=$((TERM_H - 4))
       for ((i = _clear_from; i <= _clear_to; i++)); do
         printf '\033[%d;1H\033[2K' "$i"
       done
 
-      # Hint bar
-      printf '\033[%d;1H' "$((TERM_H - 3))"
-      printf '\033[K\n'
-      if [[ -n "$_filter" ]]; then
-        printf '\033[K  %s↑↓%s navigate  %s→/Enter%s select  %s←/esc%s back  %sBksp%s erase  %stype%s to filter\n' \
-          "$C_ACCENT" "$C_MUTED" "$C_ACCENT" "$C_MUTED" "$C_ACCENT" "$C_MUTED" "$C_ACCENT" "$C_MUTED" "$C_ACCENT" "$C_RESET"
-      else
-        printf '\033[K  %s↑↓%s navigate  %s→/Enter%s select  %s←/esc%s back  %sc%s clear  %sq%s quit  %stype%s to filter\n' \
-          "$C_ACCENT" "$C_MUTED" "$C_ACCENT" "$C_MUTED" "$C_ACCENT" "$C_MUTED" "$C_ACCENT" "$C_MUTED" "$C_ACCENT" "$C_MUTED" "$C_ACCENT" "$C_RESET"
-      fi
-
-      # Update picker position for footer
+      # Update picker position for footer.
       if (( count > 0 )); then
         PICKER_POSITION="$((sel + 1)) of ${count}"
       else
@@ -462,31 +449,26 @@ choose_menu() {
   trap 'SPINNER_ROW=0; set_chrome_state idle; _redraw_footer; stty "$_old_stty" </dev/tty 2>/dev/null; printf "\033[?25h" >&3' RETURN
 
   # _readkey: read up to 4 bytes from tty, return as hex string in _HEX.
-  # Reads all available bytes in a single perl call to avoid escape sequence splitting.
-  # Returns 1 on timeout (no input).
+  # Pure bash — no perl subprocess per poll (which was the visible flicker).
+  # Returns 1 on timeout (no input). The outer choose_menu already set
+  # `stty -echo -icanon min 0 time 1`, so a -t 0 read picks up bytes within
+  # the kernel's 100ms VTIME without blocking the loop.
   _readkey() {
-    _HEX=$(perl -e '
-      use POSIX qw(tcgetattr tcsetattr TCSANOW);
-      open(my $tty, "<", "/dev/tty") or exit 1;
-      my $fd = fileno($tty);
-      my $old = POSIX::Termios->new; $old->getattr($fd);
-      my $raw = POSIX::Termios->new; $raw->getattr($fd);
-      $raw->setcc(POSIX::VMIN, 0);
-      $raw->setcc(POSIX::VTIME, 1);  # 0.1s timeout
-      $raw->setattr($fd, TCSANOW);
-      my $buf = "";
-      my $n = sysread($tty, $buf, 1);
-      if (defined $n && $n > 0) {
-        # Got first byte; try to read more (for escape sequences)
-        if (ord($buf) == 0x1b) {
-          my $more;
-          my $n2 = sysread($tty, $more, 3);
-          $buf .= $more if defined $n2 && $n2 > 0;
-        }
-        printf "%s", join("", map { sprintf("%02x", ord($_)) } split(//, $buf));
-      }
-      $old->setattr($fd, TCSANOW);
-    ' 2>/dev/null) || true
+    _HEX=""
+    local byte=""
+    IFS= read -rs -n 1 -t 0.3 byte </dev/tty 2>/dev/null || return 1
+    [[ -z "$byte" ]] && return 1
+    _HEX=$(printf '%02x' "'$byte")
+    if [[ "$_HEX" == "1b" ]]; then
+      # Escape sequence — pull up to 3 more bytes with a tight timeout.
+      local rest=""
+      IFS= read -rs -n 3 -t 0.01 rest </dev/tty 2>/dev/null || true
+      local i ch
+      for (( i = 0; i < ${#rest}; i++ )); do
+        ch="${rest:$i:1}"
+        _HEX+=$(printf '%02x' "'$ch")
+      done
+    fi
     [[ -n "$_HEX" ]]
   }
 
