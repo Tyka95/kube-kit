@@ -4,7 +4,17 @@ pick_aws_profile() {
   local profiles
   profiles=$(aws configure list-profiles 2>/dev/null | sort) || true
   [[ -z "$profiles" ]] && { err "No AWS profiles configured." >&2; return 1; }
-  echo "$profiles" | gum filter --placeholder "Type to search..." --header "  AWS Profile"
+
+  local _prof_items=() _prof_line
+  while IFS= read -r _prof_line; do
+    [[ -z "$_prof_line" ]] && continue
+    _prof_items+=("${_prof_line}|profile|")
+  done <<< "$profiles"
+
+  PICKER_BINDS=()
+  choose_menu "AWS Profile" "${_prof_items[@]}" || return 1
+  [[ "$PICKER_RESULT_KIND" != "select" ]] && return 1
+  echo "$PICKER_RESULT_VALUE"
 }
 
 pick_namespace() {
@@ -18,7 +28,18 @@ pick_namespace() {
       --preview-window=right:50%:wrap) || return 1
     selected=$(echo "$selected" | awk '{print $1}')
   else
-    selected=$(echo "$items" | awk '{print $1}' | gum filter --placeholder "Type to search..." --header "  Namespace") || return 1
+    local _ns_items=() _ns_line
+    while IFS= read -r _ns_line; do
+      [[ -z "$_ns_line" ]] && continue
+      local _ns_name _ns_phase
+      _ns_name=$(echo "$_ns_line" | awk '{print $1}')
+      _ns_phase=$(echo "$_ns_line" | awk '{print $2}')
+      _ns_items+=("${_ns_name}|namespace|${_ns_phase}")
+    done <<< "$items"
+    PICKER_BINDS=()
+    choose_menu "Namespace" "${_ns_items[@]}" || return 1
+    [[ "$PICKER_RESULT_KIND" != "select" ]] && return 1
+    selected="$PICKER_RESULT_VALUE"
   fi
   _save_state "last_namespace" "$selected"
   echo "$selected"
@@ -37,7 +58,19 @@ pick_pod() {
       --preview-window=right:50%:wrap) || return 1
     pod=$(echo "$pod" | awk '{print $1}')
   else
-    pod=$(echo "$items" | awk '{print $1}' | gum filter --placeholder "Type to search..." --header "  Pod in $ns") || return 1
+    local _pod_items=() _pod_line
+    while IFS= read -r _pod_line; do
+      [[ -z "$_pod_line" ]] && continue
+      local _pod_name _pod_phase _pod_restarts
+      _pod_name=$(echo "$_pod_line" | awk '{print $1}')
+      _pod_phase=$(echo "$_pod_line" | awk '{print $2}')
+      _pod_restarts=$(echo "$_pod_line" | awk '{print $3}')
+      _pod_items+=("${_pod_name}|${_pod_phase}|restarts:${_pod_restarts}")
+    done <<< "$items"
+    PICKER_BINDS=()
+    choose_menu "Pod in $ns" "${_pod_items[@]}" || return 1
+    [[ "$PICKER_RESULT_KIND" != "select" ]] && return 1
+    pod="$PICKER_RESULT_VALUE"
   fi
   echo "$ns/$pod"
 }
@@ -55,7 +88,19 @@ pick_deployment() {
       --preview-window=right:50%:wrap) || return 1
     dep=$(echo "$dep" | awk '{print $1}')
   else
-    dep=$(echo "$items" | awk '{print $1}' | gum filter --placeholder "Type to search..." --header "  Deployment in $ns") || return 1
+    local _dep_items=() _dep_line
+    while IFS= read -r _dep_line; do
+      [[ -z "$_dep_line" ]] && continue
+      local _dep_name _dep_desired _dep_ready
+      _dep_name=$(echo "$_dep_line" | awk '{print $1}')
+      _dep_desired=$(echo "$_dep_line" | awk '{print $2}')
+      _dep_ready=$(echo "$_dep_line" | awk '{print $3}')
+      _dep_items+=("${_dep_name}|deployment|${_dep_ready}/${_dep_desired}")
+    done <<< "$items"
+    PICKER_BINDS=()
+    choose_menu "Deployment in $ns" "${_dep_items[@]}" || return 1
+    [[ "$PICKER_RESULT_KIND" != "select" ]] && return 1
+    dep="$PICKER_RESULT_VALUE"
   fi
   echo "$ns/$dep"
 }

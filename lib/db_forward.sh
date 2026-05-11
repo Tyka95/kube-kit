@@ -146,13 +146,31 @@ db_forward() {
 
   _db_options+=("Custom endpoint")
 
-  local _display_opts=()
+  # Build choose_menu rows: "label|kind|tag". Discovered rows have an
+  # embedded "[profile]" tag we strip for the visible label and expose as
+  # the meta column.
+  local _menu_items=() _dbt _name _tag _without_tag
   for _dbt in "${_db_options[@]}"; do
-    _display_opts+=("${_dbt%%|*}")
+    _name="${_dbt%%|*}"
+    if [[ "$_name" == *"["*"]"* ]]; then
+      _tag="${_name##*[}"
+      _tag="${_tag%]*}"
+      _without_tag="${_name% \[*}"
+      _menu_items+=("${_without_tag}|discovered|${_tag}")
+    elif [[ "$_name" == "Custom endpoint" ]]; then
+      _menu_items+=("${_name}|manual|")
+    else
+      _menu_items+=("${_name}|configured|")
+    fi
   done
 
-  local target
-  target=$(printf '%s\n' "${_display_opts[@]}" | gum choose --header "  Database target") || { _redraw_footer; return; }
+  PICKER_BINDS=()
+  choose_menu "Database Tunnel" "${_menu_items[@]}" || { _redraw_footer; return; }
+  if [[ "$PICKER_RESULT_KIND" != "select" ]]; then
+    _redraw_footer
+    return
+  fi
+  local target="$PICKER_RESULT_VALUE"
   clear_content
   header "Database Tunnel"
 
@@ -166,7 +184,9 @@ db_forward() {
   local _matched=false
   for _dbt in "${_db_options[@]}"; do
     local _name="${_dbt%%|*}"
-    if [[ "$target" == "$_name" && "$_dbt" == *"|"* ]]; then
+    local _match_name="$_name"
+    [[ "$_match_name" == *" ["*"]"* ]] && _match_name="${_match_name% \[*}"
+    if [[ "$target" == "$_match_name" && "$_dbt" == *"|"* ]]; then
       local _rest="${_dbt#*|}"
       db_host="${_rest%%|*}"
       db_port="${_rest#*|}"

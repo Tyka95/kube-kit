@@ -36,8 +36,18 @@ switch_context() {
   local current
   current=$(kubectl config current-context 2>/dev/null) || true
 
-  local selected
-  selected=$(echo "$contexts" | gum filter --placeholder "Type to search..." --header "  Switch kubectl context (current: ${current:-none})") || return
+  local _ctx_items=() _ctx_line _suffix
+  while IFS= read -r _ctx_line; do
+    [[ -z "$_ctx_line" ]] && continue
+    _suffix=""
+    [[ "$_ctx_line" == "$current" ]] && _suffix="current"
+    _ctx_items+=("${_ctx_line}|context|${_suffix}")
+  done <<< "$contexts"
+
+  PICKER_BINDS=()
+  choose_menu "Switch kubectl context" "${_ctx_items[@]}" || return
+  [[ "$PICKER_RESULT_KIND" != "select" ]] && return
+  local selected="$PICKER_RESULT_VALUE"
 
   kubectl config use-context "$selected" >/dev/null 2>&1
   ok "Switched to $selected."
@@ -95,12 +105,24 @@ connect_cluster() {
   all_clusters=$(echo "$all_clusters" | sed '/^$/d' | sort)
   [[ -z "$all_clusters" ]] && { err "No clusters found in any region."; return; }
 
-  local selected
-  selected=$(echo "$all_clusters" | gum filter --placeholder "Type to search..." --header "  EKS Cluster") || return
+  local _eks_items=() _eks_line _name _region
+  while IFS= read -r _eks_line; do
+    [[ -z "$_eks_line" ]] && continue
+    _name="${_eks_line%% (*}"
+    _region="${_eks_line##*(}"
+    _region="${_region%)}"
+    _eks_items+=("${_name}|eks|${_region}")
+  done <<< "$all_clusters"
 
-  local cluster region
-  cluster="${selected%% (*}"
-  region="${selected##*(}"
+  PICKER_BINDS=()
+  choose_menu "EKS Cluster" "${_eks_items[@]}" || return
+  [[ "$PICKER_RESULT_KIND" != "select" ]] && return
+  local selected_name="$PICKER_RESULT_VALUE"
+
+  local cluster="$selected_name" region=""
+  # Recover region by matching the original "<name> (<region>)" line.
+  region=$(printf '%s\n' "$all_clusters" | grep -F "${selected_name} (" | head -n1)
+  region="${region##*(}"
   region="${region%)}"
 
   show_cmd "aws eks update-kubeconfig --region $region --name $cluster --profile $profile"
