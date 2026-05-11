@@ -25,16 +25,21 @@ BREADCRUMBS=()
 
 push_breadcrumb() {
   BREADCRUMBS+=("$1")
+  return 0
 }
 
 pop_breadcrumb() {
   local n=${#BREADCRUMBS[@]}
-  (( n > 0 )) && unset 'BREADCRUMBS[n-1]'
-  BREADCRUMBS=(${BREADCRUMBS[@]+"${BREADCRUMBS[@]}"})
+  if (( n > 0 )); then
+    unset 'BREADCRUMBS[n-1]'
+    BREADCRUMBS=(${BREADCRUMBS[@]+"${BREADCRUMBS[@]}"})
+  fi
+  return 0
 }
 
 clear_breadcrumbs() {
   BREADCRUMBS=()
+  return 0
 }
 
 # Picker position string (e.g. "3 of 12"). Set by choose_menu; consumed by
@@ -365,24 +370,55 @@ choose_menu() {
     fi
   }
 
+  # Paint a row in the "mid-fade" tint — used as the first frame of the
+  # selection-move animation so the new row visibly appears, then settles.
+  _draw_row_fade() {
+    local row="$1" idx="$2"
+    local lbl="${labels[$idx]:0:_LBL_W}"
+    local desc="${descs[$idx]:0:_DESC_W}"
+    local meta="${metas[$idx]:0:_META_W}"
+    local lbl_pad="$lbl"
+    while (( ${#lbl_pad}  < _LBL_W  )); do lbl_pad+=" "; done
+    local desc_pad="$desc"
+    while (( ${#desc_pad} < _DESC_W )); do desc_pad+=" "; done
+    local meta_pad=""
+    local _mp=$((_META_W - ${#meta}))
+    (( _mp < 0 )) && _mp=0
+    while (( ${#meta_pad} < _mp )); do meta_pad+=" "; done
+    meta_pad+="$meta"
+    local plain_text="  ${lbl_pad}   ${desc_pad}"
+    [[ -n "$meta" ]] && plain_text+="   ${meta_pad}"
+    while (( ${#plain_text} < TERM_W )); do plain_text+=" "; done
+    plain_text="${plain_text:0:TERM_W}"
+    printf '\033[%d;1H%s%s%s%s' "$row" "$C_BG_FADE" "$C_PRIMARY" "$plain_text" "$C_RESET" >&3
+  }
+
   # Move the selection from $1 → current $sel without redrawing everything.
-  # If the new selection is still visible, we only repaint the two affected
-  # rows (cheap, no full-screen flicker). If sel scrolled out of view, fall
-  # back to _draw which handles scroll + clear.
+  # If the new selection is still visible, paint a brief 2-frame fade-in
+  # transition (~50 ms total). If sel scrolled out of view, fall back to
+  # _draw which handles scroll + clear.
   _smooth_select_move() {
     local was=$1
     if (( sel < scroll || sel >= scroll + visible )); then
       _draw
-      return
+      return 0
     fi
     local list_top=$row_start
     [[ -n "$_filter" ]] && list_top=$((row_start + 1))
     local old_row=$((list_top + (was - scroll)))
     local new_row=$((list_top + (sel - scroll)))
+
+    # Frame 1: clear the old row, paint the new row in the fade tint.
     _draw_row "$old_row" "$was"
+    _draw_row_fade "$new_row" "$sel"
+    perl -e 'select(undef,undef,undef,0.05)' 2>/dev/null || sleep 0.05
+
+    # Frame 2: settle into the full selection background.
     _draw_row "$new_row" "$sel"
+
     PICKER_POSITION="$((sel + 1)) of ${count}"
     _redraw_footer
+    return 0
   }
 
   _draw() {

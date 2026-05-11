@@ -17,6 +17,8 @@ if (( _KK_COLORS >= 256 )); then
   C_DANGER=$'\033[38;2;247;118;142m'    # #f7768e  error / expired
   # Selection background — dim navy, readable with C_PRIMARY text on top.
   C_BG_SELECT=$'\033[48;2;30;42;78m'    # #1e2a4e
+  # Mid-fade tint used for the brief selection-move animation.
+  C_BG_FADE=$'\033[48;2;18;25;46m'      # #12192e
 elif (( _KK_COLORS >= 16 )); then
   # 16-color fallback.
   C_PRIMARY=$'\033[37m'
@@ -26,6 +28,7 @@ elif (( _KK_COLORS >= 16 )); then
   C_WARN=$'\033[93m'
   C_DANGER=$'\033[91m'
   C_BG_SELECT=$'\033[44m'
+  C_BG_FADE=$'\033[44m'
 else
   # No-color terminal. Rely on bold/reverse for emphasis.
   C_PRIMARY=""
@@ -35,6 +38,7 @@ else
   C_WARN=""
   C_DANGER=""
   C_BG_SELECT=$'\033[7m'   # fall back to reverse-video when no colors
+  C_BG_FADE=$'\033[7m'
 fi
 
 # Style modifiers (orthogonal to color tokens).
