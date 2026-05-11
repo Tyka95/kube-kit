@@ -5,6 +5,47 @@
 TERM_W=80
 TERM_H=24
 
+# Header content registry: per-screen contextual key hints. Each entry is
+# "<key> <action>". Up to 5 entries render right-aligned in the header.
+# Set by callers via set_keyhints; cleared on screen exit.
+KEYHINTS=()
+HEADER_ROWS=3
+
+set_keyhints() {
+  KEYHINTS=("$@")
+}
+
+clear_keyhints() {
+  KEYHINTS=()
+}
+
+# Breadcrumb trail. Each entry is a short name shown after "Main ›". Updated
+# by push_breadcrumb / pop_breadcrumb at menu boundaries.
+BREADCRUMBS=()
+
+push_breadcrumb() {
+  BREADCRUMBS+=("$1")
+}
+
+pop_breadcrumb() {
+  local n=${#BREADCRUMBS[@]}
+  (( n > 0 )) && unset 'BREADCRUMBS[n-1]'
+  BREADCRUMBS=("${BREADCRUMBS[@]}")
+}
+
+clear_breadcrumbs() {
+  BREADCRUMBS=()
+}
+
+# Picker position string (e.g. "3 of 12"). Set by choose_menu; consumed by
+# _footer_bar.
+PICKER_POSITION=""
+
+# Chrome state — drives the border color.
+# Values: idle | active | busy. set_chrome_state is wired in Task 12.
+CHROME_STATE="idle"
+CHROME_BORDER_COLOR="$C_MUTED"
+
 # Resize detection — polling-based (bash 3.2 loses SIGWINCH during subshells)
 _WINCH_FLAG=0
 
@@ -17,64 +58,121 @@ _refresh_term_size() {
 
 _header_bar() {
   local w=$TERM_W
-  # Row 1: full-width top border
-  local border=""
-  for ((i = 0; i < w; i++)); do border+="─"; done
-  printf '%s%s%s\n' "$C_MUTED" "$border" "$C_RESET"
-  # Row 2: "  X KubeKit v0.1.5 ────────..."  (X = animated icon placeholder)
-  local ver_label="KubeKit v${VERSION}"
-  local prefix_len=$((4 + ${#ver_label} + 1))  # "  XX {ver_label} "
-  local fill=$((w - prefix_len))
-  ((fill < 1)) && fill=1
-  local line=""
-  for ((i = 0; i < fill; i++)); do line+="─"; done
-  # 4 leading spaces: 2 margin + 2 for icon (overwritten by _update_anim)
-  printf '    %s%s%s %s%s%s\n' "$C_PRIMARY" "$ver_label" "$C_RESET" "$C_MUTED" "$line" "$C_RESET"
+  local border_color="${CHROME_BORDER_COLOR:-$C_MUTED}"
+
+  # Row 1: ╭─ kubekit ─────…─╮
+  local label=" kubekit "
+  local left="╭─${label}"
+  local right="╮"
+  local fill_len=$((w - ${#left} - ${#right}))
+  (( fill_len < 0 )) && fill_len=0
+  local fill="" i
+  for ((i = 0; i < fill_len; i++)); do fill+="─"; done
+  printf '%s%s%s%s%s\n' "$border_color" "$left" "$fill" "$right" "$C_RESET"
+
+  # Row 2: status line (k8s / ns / aws segments).
+  local status=""
+  if [[ -n "$_CTX_CLUSTER" ]]; then
+    status+="${C_MUTED}k8s${C_RESET} ${C_PRIMARY}${_CTX_CLUSTER}${C_RESET}"
+  else
+    status+="${C_MUTED}k8s${C_RESET} ${C_DANGER}no cluster${C_RESET}"
+  fi
+  status+="  ${C_MUTED}ns${C_RESET} ${C_PRIMARY}${_CTX_NS:-default}${C_RESET}"
+  if [[ -n "$AWS_SESSION_PROFILE" || "$AWS_SESSION_STATUS" != "unknown" ]]; then
+    status+="  ${C_MUTED}aws${C_RESET} ${C_PRIMARY}${AWS_SESSION_PROFILE:-<none>}${C_RESET}"
+    local glyph detail
+    case "$AWS_SESSION_STATUS" in
+      ok)
+        if [[ -n "$AWS_SESSION_CTX_ACCOUNT" && -n "$AWS_SESSION_ACCOUNT" \
+           && "$AWS_SESSION_CTX_ACCOUNT" != "$AWS_SESSION_ACCOUNT" ]]; then
+          glyph="${C_WARN}⚠${C_RESET}"
+          detail="${C_WARN}mismatch ⟶ ${AWS_SESSION_CTX_ACCOUNT}${C_RESET}"
+        else
+          glyph="${C_SUCCESS}✓${C_RESET}"
+          detail="${C_MUTED}${AWS_SESSION_ACCOUNT}${C_RESET}"
+        fi ;;
+      expired) glyph="${C_DANGER}✗${C_RESET}";  detail="${C_DANGER}expired${C_RESET}" ;;
+      no-aws)  glyph="${C_MUTED}–${C_RESET}";   detail="${C_MUTED}no aws${C_RESET}" ;;
+      *)       glyph="${C_MUTED}…${C_RESET}";   detail="${C_MUTED}validating${C_RESET}" ;;
+    esac
+    status+=" ${glyph} ${detail}"
+  fi
+
+  # Visible length of status (strip ANSI for padding math).
+  local plain
+  plain=$(printf '%s' "$status" | sed $'s/\033\\[[0-9;]*m//g')
+  local visible_status=${#plain}
+
+  # Right-aligned key hints, up to 5 stacked vertically.
+  local hints=()
+  local h
+  for h in "${KEYHINTS[@]}"; do hints+=("$h"); done
+  (( ${#hints[@]} > 5 )) && hints=("${hints[@]:0:5}")
+
+  # Row 2: status on the left, first hint right-aligned.
+  local hint0="${hints[0]:-}"
+  local pad=$((w - 2 - visible_status - ${#hint0}))
+  (( pad < 1 )) && pad=1
+  local spaces=""
+  for ((i = 0; i < pad; i++)); do spaces+=" "; done
+  printf '%s│%s %s%s%s%s %s│%s\n' \
+    "$border_color" "$C_RESET" \
+    "$status" "$spaces" "$C_MUTED" "$hint0" "$border_color" "$C_RESET"
+
+  # Rows 3+ : remaining hints (right-aligned, blank left).
+  local hi hpad hspaces j
+  for ((i = 1; i < ${#hints[@]}; i++)); do
+    hi="${hints[$i]}"
+    hpad=$((w - 4 - ${#hi}))
+    (( hpad < 0 )) && hpad=0
+    hspaces=""
+    for ((j = 0; j < hpad; j++)); do hspaces+=" "; done
+    printf '%s│%s%s%s%s %s│%s\n' \
+      "$border_color" "$C_RESET" "$hspaces" "$C_MUTED" "$hi" "$border_color" "$C_RESET"
+  done
+
+  # Bottom border: ╰─…─╯
+  local bottom=""
+  for ((i = 0; i < w - 2; i++)); do bottom+="─"; done
+  printf '%s╰%s╯%s\n' "$border_color" "$bottom" "$C_RESET"
+}
+
+_breadcrumb_row() {
+  local trail="${C_MUTED}Main${C_RESET}"
+  local b
+  for b in "${BREADCRUMBS[@]}"; do
+    trail+="${C_MUTED} › ${C_RESET}${C_PRIMARY}${b}${C_RESET}"
+  done
+  printf ' %s' "$trail"
 }
 
 _footer_bar() {
   local w=$TERM_W
-  local border=""
-  for ((i = 0; i < w; i++)); do border+="─"; done
+  local border_color="${CHROME_BORDER_COLOR:-$C_MUTED}"
 
-  local _ftr=""
-  if [[ -n "$_CTX_CLUSTER" ]]; then
-    _ftr+="${C_ACCENT}⎈${C_RESET} ${_CTX_CLUSTER}"
-  else
-    _ftr+="${C_DANGER}⎈${C_RESET} no cluster"
-  fi
-  _ftr+="  ${C_MUTED}│${C_RESET}  ${C_ACCENT}⬡${C_RESET} ${_CTX_NS:-default}"
-  if [[ -n "$AWS_SESSION_PROFILE" || "$AWS_SESSION_STATUS" != "unknown" ]]; then
-    _ftr+="  ${C_MUTED}│${C_RESET}  ${C_ACCENT}☁${C_RESET} ${AWS_SESSION_PROFILE:-<none>}"
-    local _ctx_acct _glyph _detail
-    _ctx_acct=$(aws_session_context_account)
-    case "$AWS_SESSION_STATUS" in
-      ok)
-        if [[ -n "$_ctx_acct" && -n "$AWS_SESSION_ACCOUNT" && "$_ctx_acct" != "$AWS_SESSION_ACCOUNT" ]]; then
-          _glyph="${C_WARN}⚠${C_RESET}"
-          _detail="${C_WARN}mismatch ⟶ ${_ctx_acct}${C_RESET}"
-        else
-          _glyph="${C_SUCCESS}✓${C_RESET}"
-          _detail="${C_MUTED}${AWS_SESSION_ACCOUNT}${C_RESET}"
-        fi
-        ;;
-      expired)
-        _glyph="${C_DANGER}✗${C_RESET}"
-        _detail="${C_DANGER}expired${C_RESET}"
-        ;;
-      no-aws)
-        _glyph="${C_MUTED}–${C_RESET}"
-        _detail="${C_MUTED}no aws${C_RESET}"
-        ;;
-      *)
-        _glyph="${C_MUTED}…${C_RESET}"
-        _detail="${C_MUTED}validating${C_RESET}"
-        ;;
-    esac
-    _ftr+=" ${_glyph} ${_detail}"
-  fi
-  printf '%s%s%s\n' "$C_MUTED" "$border" "$C_RESET"
-  printf ' %s' "$_ftr"
+  local top="" i
+  for ((i = 0; i < w - 2; i++)); do top+="─"; done
+  printf '%s╭%s╮%s\n' "$border_color" "$top" "$C_RESET"
+
+  local left="${C_MUTED}/${C_RESET} filter   ${C_MUTED}:${C_RESET} command"
+  local right=""
+  [[ -n "$PICKER_POSITION" ]] && right+="${C_MUTED}${PICKER_POSITION}${C_RESET}   "
+  right+="${C_MUTED}↑↓${C_RESET} select  ${C_MUTED}⏎${C_RESET} go  ${C_MUTED}?${C_RESET} help"
+
+  local plain_left plain_right
+  plain_left=$(printf '%s' "$left" | sed $'s/\033\\[[0-9;]*m//g')
+  plain_right=$(printf '%s' "$right" | sed $'s/\033\\[[0-9;]*m//g')
+  local pad=$((w - 4 - ${#plain_left} - ${#plain_right}))
+  (( pad < 1 )) && pad=1
+  local spaces=""
+  for ((i = 0; i < pad; i++)); do spaces+=" "; done
+
+  printf '%s│%s %s%s%s %s│%s\n' \
+    "$border_color" "$C_RESET" "$left" "$spaces" "$right" "$border_color" "$C_RESET"
+
+  local bottom=""
+  for ((i = 0; i < w - 2; i++)); do bottom+="─"; done
+  printf '%s╰%s╯%s' "$border_color" "$bottom" "$C_RESET"
 }
 
 _enter_alt_screen() {
@@ -89,20 +187,26 @@ draw_chrome() {
   _refresh_ctx || true
   _refresh_term_size
 
-  # Clear screen and home cursor
+  # Clear screen and home cursor.
   printf '\033[2J\033[H' >&3
-
-  # Hide cursor
   printf '\033[?25l' >&3
 
-  # Header (rows 1-2: border + title)
-  _header_bar >&3
+  # Header height depends on hint count: 1 top + 1 status + (hints-1) extras + 1 bottom.
+  local _hints_len=${#KEYHINTS[@]}
+  (( _hints_len > 5 )) && _hints_len=5
+  HEADER_ROWS=3
+  (( _hints_len > 1 )) && HEADER_ROWS=$((HEADER_ROWS + _hints_len - 1))
 
-  # Footer pinned at bottom (rows TERM_H-1 and TERM_H)
+  _header_bar >&3
+  # Blank line + breadcrumb + blank line below the header block.
+  printf '\n' >&3
+  _breadcrumb_row >&3
+  printf '\n\n' >&3
+
   _redraw_footer
 
-  # Cursor to content area (row 3)
-  printf '\033[3;1H' >&3
+  # Cursor to content area (right after the breadcrumb's two blank lines).
+  printf '\033[%d;1H' "$((HEADER_ROWS + 3))" >&3
 }
 
 # Full reset for resize — toggle alt screen to flush iTerm2 reflow artifacts
@@ -115,23 +219,26 @@ draw_chrome_reset() {
 # Redraw just the footer at the bottom of the screen
 _redraw_footer() {
   _refresh_term_size
-  printf '\033[s' >&3                              # save cursor
-  printf '\033[%d;1H\033[K' "$((TERM_H - 1))" >&3 # go to footer row, clear
-  printf '\033[%d;1H\033[K' "$TERM_H" >&3          # clear last row too
-  printf '\033[%d;1H' "$((TERM_H - 1))" >&3        # back to footer row
+  printf '\033[s' >&3
+  printf '\033[%d;1H\033[K' "$((TERM_H - 2))" >&3
+  printf '\033[%d;1H\033[K' "$((TERM_H - 1))" >&3
+  printf '\033[%d;1H\033[K' "$TERM_H" >&3
+  printf '\033[%d;1H' "$((TERM_H - 2))" >&3
   _footer_bar >&3
-  printf '\033[u' >&3                              # restore cursor
+  printf '\033[u' >&3
 }
 
 # Clear content area and reposition cursor for action output
 clear_content() {
-  printf '\033[3;1H' >&3
+  local top=$((HEADER_ROWS + 3))
+  local bottom=$((TERM_H - 3))
+  printf '\033[%d;1H' "$top" >&3
   local i
-  for ((i = 3; i <= TERM_H - 2; i++)); do
+  for ((i = top; i <= bottom; i++)); do
     printf '\033[2K\033[B' >&3
   done
   _redraw_footer
-  printf '\033[3;1H' >&3
+  printf '\033[%d;1H' "$top" >&3
 }
 
 # ── Menu chooser ──────────────────────────────────────────────────────────────
