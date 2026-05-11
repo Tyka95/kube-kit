@@ -206,15 +206,18 @@ draw_chrome() {
   HEADER_ROWS=3
   (( _hints_len > 1 )) && HEADER_ROWS=$((HEADER_ROWS + _hints_len - 1))
 
+  # Position header explicitly at row 1.
+  printf '\033[1;1H' >&3
   _header_bar >&3
-  # Blank line + breadcrumb + blank line below the header block.
-  printf '\n' >&3
+
+  # Breadcrumb on the row immediately after the header. Content begins
+  # two rows after the header (one breadcrumb row + one blank).
+  printf '\033[%d;1H\033[2K' "$((HEADER_ROWS + 1))" >&3
   _breadcrumb_row >&3
-  printf '\n\n' >&3
+  printf '\033[%d;1H\033[2K' "$((HEADER_ROWS + 2))" >&3
 
   _redraw_footer
 
-  # Cursor to content area (right after the breadcrumb's two blank lines).
   printf '\033[%d;1H' "$((HEADER_ROWS + 3))" >&3
 }
 
@@ -504,6 +507,11 @@ choose_menu() {
   }
 
   while true; do
+    # Re-apply raw mode each iteration so external programs (gum confirm,
+    # aws sso login, etc.) that may have toggled the terminal can't leak
+    # typed characters onto our screen as visible echo.
+    stty -echo -icanon min 0 time 1 </dev/tty 2>/dev/null || true
+
     if ! _readkey; then
       _tick || true
       # Only stat the terminal occasionally while idle.
@@ -621,8 +629,12 @@ choose_menu() {
       printf '\033[?25h' >&3
       printf '\033[%d;1H\033[2K' "$((TERM_H - 1))" >&3
       printf ' %s/%s ' "$C_ACCENT" "$C_RESET" >&3
+      # Temporarily re-enable echo + canonical mode so the user sees what
+      # they're typing and Enter terminates the read.
+      stty echo icanon </dev/tty 2>/dev/null || true
       local _new_filter=""
       read -r _new_filter < /dev/tty || true
+      stty -echo -icanon min 0 time 1 </dev/tty 2>/dev/null || true
       _filter="$_new_filter"
       _apply_filter
       visible=$((count < max_visible ? count : max_visible))
@@ -637,8 +649,10 @@ choose_menu() {
       printf '\033[?25h' >&3
       printf '\033[%d;1H\033[2K' "$((TERM_H - 1))" >&3
       printf ' %s:%s ' "$C_ACCENT" "$C_RESET" >&3
+      stty echo icanon </dev/tty 2>/dev/null || true
       local _cmd=""
       read -r _cmd < /dev/tty || true
+      stty -echo -icanon min 0 time 1 </dev/tty 2>/dev/null || true
       printf '\033[?25l' >&3
       if [[ -z "$_cmd" ]]; then
         _redraw_footer
