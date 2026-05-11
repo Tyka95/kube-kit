@@ -98,9 +98,6 @@ draw_chrome() {
   # Header (rows 1-2: border + title)
   _header_bar >&3
 
-  # Draw initial animated icon
-  _update_anim
-
   # Footer pinned at bottom (rows TERM_H-1 and TERM_H)
   _redraw_footer
 
