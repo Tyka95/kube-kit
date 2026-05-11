@@ -49,6 +49,7 @@ source "$KUBE_LIB/actions_aws.sh"
 source "$KUBE_LIB/port_forward.sh"
 source "$KUBE_LIB/db_forward.sh"
 source "$KUBE_LIB/menus.sh"
+source "$KUBE_LIB/commands.sh"
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
@@ -73,16 +74,27 @@ main() {
     drain_stdin
     BREADCRUMB=""
 
-    local choice rc=0
-    choice=$(choose_menu "Main Menu" \
+    local rc=0
+    choose_menu "Main Menu" \
       "Pods|list · logs · shell · inspect" \
       "Deployments|browse · scale · restart" \
       "Resources|namespaces · services · ingress" \
       "Cluster|context · nodes" \
       "Database|tunnel via socat pod" \
       "AWS|sso · eks · s3" \
-      "Exit") || rc=$?
+      "Exit" || rc=$?
     ((rc >= 1)) && break
+
+    if [[ "$PICKER_RESULT_KIND" == "action" ]]; then
+      case "$PICKER_RESULT_VALUE" in
+        __quit__) break ;;
+        __help__) show_help_overlay ;;
+      esac
+      continue
+    fi
+
+    [[ "$PICKER_RESULT_KIND" != "select" ]] && continue
+    local choice="$PICKER_RESULT_VALUE"
 
     case "$choice" in
       Pods)        menu_pods ;;

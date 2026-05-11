@@ -621,6 +621,72 @@ choose_menu() {
       continue
     fi
 
+    # 2f = '/' — inline filter prompt
+    if [[ "$key" == "2f" && -z "$_filter" ]]; then
+      printf '\033[?25h' >&3
+      printf '\033[%d;1H\033[2K' "$((TERM_H - 1))" >&3
+      printf ' %s/%s ' "$C_ACCENT" "$C_RESET" >&3
+      local _new_filter=""
+      read -r _new_filter < /dev/tty || true
+      _filter="$_new_filter"
+      _apply_filter
+      visible=$((count < max_visible ? count : max_visible))
+      printf '\033[?25l' >&3
+      _redraw_footer
+      _draw
+      continue
+    fi
+
+    # 3a = ':' — command palette
+    if [[ "$key" == "3a" && -z "$_filter" ]]; then
+      printf '\033[?25h' >&3
+      printf '\033[%d;1H\033[2K' "$((TERM_H - 1))" >&3
+      printf ' %s:%s ' "$C_ACCENT" "$C_RESET" >&3
+      local _cmd=""
+      read -r _cmd < /dev/tty || true
+      printf '\033[?25l' >&3
+      if [[ -z "$_cmd" ]]; then
+        _redraw_footer
+        continue
+      fi
+      if run_command "$_cmd"; then
+        case "$COMMAND_RESULT" in
+          __quit__)
+            PICKER_RESULT_KIND="action"
+            PICKER_RESULT_VALUE="__quit__"
+            printf '\033[?25h' >&3
+            if [[ -n "$_old_stty" ]]; then stty "$_old_stty" </dev/tty 2>/dev/null || true; fi
+            return 0
+            ;;
+          __help__)
+            PICKER_RESULT_KIND="action"
+            PICKER_RESULT_VALUE="__help__"
+            printf '\033[?25h' >&3
+            if [[ -n "$_old_stty" ]]; then stty "$_old_stty" </dev/tty 2>/dev/null || true; fi
+            return 0
+            ;;
+          *)
+            _redraw_footer
+            _draw
+            continue
+            ;;
+        esac
+      else
+        _redraw_footer
+        _draw
+        continue
+      fi
+    fi
+
+    # 3f = '?' — help overlay
+    if [[ "$key" == "3f" && -z "$_filter" ]]; then
+      PICKER_RESULT_KIND="action"
+      PICKER_RESULT_VALUE="__help__"
+      printf '\033[?25h' >&3
+      if [[ -n "$_old_stty" ]]; then stty "$_old_stty" </dev/tty 2>/dev/null || true; fi
+      return 0
+    fi
+
     # Custom keybindings registered by the caller (PICKER_BINDS).
     local _bind _bind_key _bind_action _matched_bind=0
     for _bind in "${PICKER_BINDS[@]}"; do
@@ -648,4 +714,56 @@ choose_menu() {
       _draw
     fi
   done
+}
+
+# ── Help overlay ─────────────────────────────────────────────────────────────
+# Rendered in the content area; lists global keys + registered commands +
+# the current screen's keyhints. Any keystroke dismisses it.
+show_help_overlay() {
+  push_breadcrumb "Help"
+  local _prev_hints=("${KEYHINTS[@]}")
+  set_keyhints "esc back"
+  draw_chrome
+  clear_content
+
+  local top=$((HEADER_ROWS + 3))
+  printf '\033[%d;1H' "$top" >&3
+  printf '  %sKubeKit — help%s\n\n' "$C_PRIMARY" "$C_RESET" >&3
+
+  printf '  %sGlobal keys%s\n' "$C_ACCENT" "$C_RESET" >&3
+  printf '    %s↑↓%s     move selection\n'   "$C_MUTED" "$C_RESET" >&3
+  printf '    %s⏎%s      activate\n'          "$C_MUTED" "$C_RESET" >&3
+  printf '    %sesc%s    back / cancel\n'    "$C_MUTED" "$C_RESET" >&3
+  printf '    %s/%s      filter list\n'      "$C_MUTED" "$C_RESET" >&3
+  printf '    %s:%s      command palette\n'  "$C_MUTED" "$C_RESET" >&3
+  printf '    %sq%s      quit\n'             "$C_MUTED" "$C_RESET" >&3
+  printf '    %s?%s      this help\n\n'      "$C_MUTED" "$C_RESET" >&3
+
+  if (( ${#_prev_hints[@]} > 0 )); then
+    printf '  %sScreen keys%s\n' "$C_ACCENT" "$C_RESET" >&3
+    local hint
+    for hint in "${_prev_hints[@]}"; do
+      printf '    %s%s%s\n' "$C_MUTED" "$hint" "$C_RESET" >&3
+    done
+    printf '\n' >&3
+  fi
+
+  printf '  %sCommands%s\n' "$C_ACCENT" "$C_RESET" >&3
+  local i
+  for ((i = 0; i < ${#COMMAND_NAMES[@]}; i++)); do
+    printf '    %s:%s%s%-10s%s %s%s%s\n' \
+      "$C_MUTED" "$C_RESET" \
+      "$C_PRIMARY" "${COMMAND_NAMES[$i]}" "$C_RESET" \
+      "$C_MUTED" "${COMMAND_DESCS[$i]}" "$C_RESET" >&3
+  done
+
+  printf '\n  %sPress any key to return%s' "$C_MUTED" "$C_RESET" >&3
+
+  # Drain any pending input then wait for one keypress.
+  if declare -F drain_stdin &>/dev/null; then drain_stdin; fi
+  read -rsn1 _ < /dev/tty 2>/dev/null || true
+
+  pop_breadcrumb
+  KEYHINTS=("${_prev_hints[@]}")
+  draw_chrome
 }
