@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.9](https://github.com/Tyka95/kube-kit/compare/v0.1.8...v0.1.9) (2026-05-11)
+
+
+### Features
+
+* AWS session state, footer status bar, RDS auto-discovery, v0.2 chrome ([#9](https://github.com/Tyka95/kube-kit/issues/9)) ([00cf51b](https://github.com/Tyka95/kube-kit/commit/00cf51ba5be59ad3ca353ed71acd18f8febc9514))
+
 ## [0.1.8](https://github.com/Tyka95/kube-kit/compare/v0.1.7...v0.1.8) (2026-03-30)
 
 
