@@ -340,8 +340,9 @@ choose_menu() {
   }
 
   # Render a single row by index. Reads the outer-scope sel/labels/etc.
-  # Used both for full _draw and for the cheap selection-move repaint that
-  # only touches the two affected rows.
+  # The row is painted in two zones: bright C_PRIMARY for the label, muted
+  # C_MUTED for description + metadata. Selected rows get a C_BG_SELECT
+  # background that spans the whole padded row width.
   _draw_row() {
     local row="$1" idx="$2"
     local lbl="${labels[$idx]:0:_LBL_W}"
@@ -357,16 +358,23 @@ choose_menu() {
     while (( ${#meta_pad} < _mp )); do meta_pad+=" "; done
     meta_pad+="$meta"
 
-    local plain_text="  ${lbl_pad}   ${desc_pad}"
-    [[ -n "$meta" ]] && plain_text+="   ${meta_pad}"
-    while (( ${#plain_text} < TERM_W )); do plain_text+=" "; done
-    plain_text="${plain_text:0:TERM_W}"
+    local label_zone="  ${lbl_pad}"
+    local detail_zone="   ${desc_pad}"
+    [[ -n "$meta" ]] && detail_zone+="   ${meta_pad}"
+    local remaining=$((TERM_W - ${#label_zone} - ${#detail_zone}))
+    (( remaining < 0 )) && remaining=0
+    while (( remaining > 0 )); do detail_zone+=" "; remaining=$((remaining - 1)); done
 
-    printf '\033[%d;1H' "$row" >&3
+    printf '\033[%d;1H\033[2K' "$row" >&3
     if (( idx == sel )); then
-      printf '%s%s%s%s' "$C_BG_SELECT" "$C_PRIMARY" "$plain_text" "$C_RESET" >&3
+      # bg covers whole row; fg switches from primary (label) to muted (detail).
+      printf '%s%s%s%s%s%s' \
+        "$C_BG_SELECT" "$C_BOLD" "$C_PRIMARY" "$label_zone" \
+        "$C_MUTED" "${detail_zone}${C_RESET}" >&3
     else
-      printf '\033[2K%s%s%s' "$C_PRIMARY" "$plain_text" "$C_RESET" >&3
+      printf '%s%s%s%s%s%s' \
+        "$C_BOLD" "$C_PRIMARY" "$label_zone" \
+        "$C_RESET" "$C_MUTED" "${detail_zone}${C_RESET}" >&3
     fi
   }
 
@@ -394,9 +402,10 @@ choose_menu() {
   }
 
   # Move the selection from $1 → current $sel without redrawing everything.
-  # If the new selection is still visible, paint a brief 2-frame fade-in
-  # transition (~50 ms total). If sel scrolled out of view, fall back to
-  # _draw which handles scroll + clear.
+  # Two-frame fade gives the new row a brief 'lift' so the user sees the
+  # selection travel; the old row repaints once, plain. The footer is
+  # NOT redrawn — that 3-row clear was the visible blink during nav.
+  # The position counter updates with a tiny in-place overwrite instead.
   _smooth_select_move() {
     local was=$1
     if (( sel < scroll || sel >= scroll + visible )); then
@@ -408,17 +417,37 @@ choose_menu() {
     local old_row=$((list_top + (was - scroll)))
     local new_row=$((list_top + (sel - scroll)))
 
-    # Frame 1: clear the old row, paint the new row in the fade tint.
+    # Repaint old row plain immediately.
     _draw_row "$old_row" "$was"
-    _draw_row_fade "$new_row" "$sel"
-    perl -e 'select(undef,undef,undef,0.05)' 2>/dev/null || sleep 0.05
 
-    # Frame 2: settle into the full selection background.
+    # Frame 1 — new row in the dim fade tint (visible 'lift').
+    _draw_row_fade "$new_row" "$sel"
+    perl -e 'select(undef,undef,undef,0.08)' 2>/dev/null || sleep 0.08
+
+    # Frame 2 — settle into the full selection background.
     _draw_row "$new_row" "$sel"
 
+    # Position counter in-place: jump to its column on the action-bar row,
+    # paint, and move cursor back. Avoids the 3-row footer flash.
     PICKER_POSITION="$((sel + 1)) of ${count}"
-    _redraw_footer
+    _update_position_in_footer
     return 0
+  }
+
+  # Cheap in-place update of the position counter in the action bar. The
+  # footer rows themselves are untouched, so no flicker.
+  _update_position_in_footer() {
+    # Target row = TERM_H-1 (the middle of the 3-row footer block).
+    # Column: right side of the action bar, before the keyhint cluster.
+    # Approximate position: TERM_W - 36 (length of '↑↓ select  ⏎ go  ? help' + counter).
+    local col=$((TERM_W - 38))
+    (( col < 1 )) && col=1
+    printf '\033[s\033[%d;%dH\033[K%s%s%s   %s↑↓%s select  %s⏎%s go  %s?%s help\033[u' \
+      "$((TERM_H - 1))" "$col" \
+      "$C_MUTED" "$PICKER_POSITION" "$C_RESET" \
+      "$C_MUTED" "$C_RESET" \
+      "$C_MUTED" "$C_RESET" \
+      "$C_MUTED" "$C_RESET" >&3
   }
 
   _draw() {
