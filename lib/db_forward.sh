@@ -15,6 +15,47 @@ DB_CACHE_ERROR=""
 
 _DB_CACHE_TTL=60
 
+# Rebuild the picker's _db_options + _menu_items in place. Used by the
+# initial render and by the R/P keybindings to re-render after a state change.
+_rebuild_db_menu_items() {
+  _db_options=()
+  _menu_items=()
+
+  local _dbt _name _tag _without_tag
+  if [[ ${#CFG_DB_TARGETS[@]} -gt 0 ]]; then
+    for _dbt in "${CFG_DB_TARGETS[@]}"; do _db_options+=("$_dbt"); done
+  fi
+  if [[ ${#DB_CACHE_ENTRIES[@]} -gt 0 ]]; then
+    local _new_host _ex _dup
+    for _dbt in "${DB_CACHE_ENTRIES[@]}"; do
+      _new_host="${_dbt#*|}"
+      _new_host="${_new_host%%|*}"
+      _dup=false
+      if [[ ${#_db_options[@]} -gt 0 ]]; then
+        for _ex in "${_db_options[@]}"; do
+          [[ "$_ex" == *"|${_new_host}|"* ]] && _dup=true && break
+        done
+      fi
+      $_dup || _db_options+=("$_dbt")
+    done
+  fi
+  _db_options+=("Custom endpoint")
+
+  for _dbt in "${_db_options[@]}"; do
+    _name="${_dbt%%|*}"
+    if [[ "$_name" == *"["*"]"* ]]; then
+      _tag="${_name##*[}"
+      _tag="${_tag%]*}"
+      _without_tag="${_name% \[*}"
+      _menu_items+=("${_without_tag}|discovered|${_tag}")
+    elif [[ "$_name" == "Custom endpoint" ]]; then
+      _menu_items+=("${_name}|manual|")
+    else
+      _menu_items+=("${_name}|configured|")
+    fi
+  done
+}
+
 # Populate DB_CACHE_* from AWS RDS for the current session.
 # Honors a 60s in-memory TTL keyed on (account, region). Failures set
 # DB_CACHE_ERROR and do NOT bump DB_CACHE_TS, so the next call retries.
@@ -86,14 +127,9 @@ _discover_db_targets() {
 
 db_forward() {
   header "Database Tunnel"
-
-  # Start from configured targets.
-  local _db_options=()
-  if [[ ${#CFG_DB_TARGETS[@]} -gt 0 ]]; then
-    for _dbt in "${CFG_DB_TARGETS[@]}"; do
-      _db_options+=("$_dbt")
-    done
-  fi
+  push_breadcrumb "Database"
+  set_keyhints "R refresh" "P profile" "? help"
+  draw_chrome
 
   # Gate: try to ensure an authenticated AWS session before discovery.
   local _can_discover=0
@@ -124,53 +160,62 @@ db_forward() {
     *)       dim  "AWS session unknown. Showing configured targets only." ;;
   esac
 
-  # Merge discovered entries with dedup-by-hostname.
-  if [[ ${#DB_CACHE_ENTRIES[@]} -gt 0 ]]; then
-    local _new_host _ex _dup
-    for _dbt in "${DB_CACHE_ENTRIES[@]}"; do
-      _new_host="${_dbt#*|}"
-      _new_host="${_new_host%%|*}"
-      _dup=false
-      if [[ ${#_db_options[@]} -gt 0 ]]; then
-        for _ex in "${_db_options[@]}"; do
-          [[ "$_ex" == *"|${_new_host}|"* ]] && _dup=true && break
-        done
-      fi
-      $_dup || _db_options+=("$_dbt")
-    done
-  fi
-
   if [[ -n "$DB_CACHE_ERROR" ]]; then
     err "Discovery error: ${DB_CACHE_ERROR}"
   fi
 
-  _db_options+=("Custom endpoint")
-
   # Build choose_menu rows: "label|kind|tag". Discovered rows have an
   # embedded "[profile]" tag we strip for the visible label and expose as
-  # the meta column.
-  local _menu_items=() _dbt _name _tag _without_tag
-  for _dbt in "${_db_options[@]}"; do
-    _name="${_dbt%%|*}"
-    if [[ "$_name" == *"["*"]"* ]]; then
-      _tag="${_name##*[}"
-      _tag="${_tag%]*}"
-      _without_tag="${_name% \[*}"
-      _menu_items+=("${_without_tag}|discovered|${_tag}")
-    elif [[ "$_name" == "Custom endpoint" ]]; then
-      _menu_items+=("${_name}|manual|")
-    else
-      _menu_items+=("${_name}|configured|")
-    fi
-  done
+  # the meta column. Dedup by hostname is handled inside _rebuild_db_menu_items.
+  local _db_options=() _menu_items=()
+  _rebuild_db_menu_items
 
-  PICKER_BINDS=()
-  choose_menu "Database Tunnel" "${_menu_items[@]}" || { _redraw_footer; return; }
-  if [[ "$PICKER_RESULT_KIND" != "select" ]]; then
-    _redraw_footer
-    return
-  fi
-  local target="$PICKER_RESULT_VALUE"
+  local target=""
+  while :; do
+    PICKER_BINDS=("r:refresh" "p:profile")
+    if ! choose_menu "Database Tunnel" "${_menu_items[@]}"; then
+      pop_breadcrumb
+      clear_keyhints
+      _redraw_footer
+      return
+    fi
+    case "$PICKER_RESULT_KIND" in
+      select)
+        target="$PICKER_RESULT_VALUE"
+        break
+        ;;
+      action)
+        case "$PICKER_RESULT_VALUE" in
+          refresh)
+            DB_CACHE_TS=0
+            DB_CACHE_ACCOUNT=""
+            DB_CACHE_REGION=""
+            DB_CACHE_ENTRIES=()
+            _discover_db_targets || true
+            _rebuild_db_menu_items
+            continue
+            ;;
+          profile)
+            local _new_profile
+            _new_profile=$(pick_aws_profile) || { draw_chrome; continue; }
+            AWS_SESSION_PROFILE="$_new_profile"
+            aws_session_context_changed
+            aws_session_validate 1 || true
+            _discover_db_targets || true
+            _rebuild_db_menu_items
+            draw_chrome
+            continue
+            ;;
+        esac
+        ;;
+      *)
+        pop_breadcrumb
+        clear_keyhints
+        _redraw_footer
+        return
+        ;;
+    esac
+  done
   clear_content
   header "Database Tunnel"
 
@@ -199,23 +244,30 @@ db_forward() {
     drain_stdin
     printf '  %sHost%s %s(Ctrl+C to cancel)%s: ' "$C_ACCENT" "$C_RESET" "$C_MUTED" "$C_RESET" >&3
     read -r db_host < /dev/tty || true
-    $_db_cancelled && { echo "" >&3; return; }
+    if $_db_cancelled; then echo "" >&3; pop_breadcrumb; clear_keyhints; return; fi
     printf '  %sDB Port%s [%s5432%s]: ' "$C_ACCENT" "$C_RESET" "$C_MUTED" "$C_RESET" >&3
     read -r db_port < /dev/tty || true
-    $_db_cancelled && { echo "" >&3; return; }
+    if $_db_cancelled; then echo "" >&3; pop_breadcrumb; clear_keyhints; return; fi
     db_port="${db_port:-5432}"
   fi
-  [[ -z "$db_host" ]] && { err "No host specified."; return; }
+  if [[ -z "$db_host" ]]; then
+    err "No host specified."
+    pop_breadcrumb
+    clear_keyhints
+    return
+  fi
 
   local local_port
   drain_stdin
   printf '  %sLocal port%s [%s15432%s] %s(Ctrl+C to cancel)%s: ' "$C_ACCENT" "$C_RESET" "$C_MUTED" "$C_RESET" "$C_MUTED" "$C_RESET" >&3
   read -r local_port < /dev/tty || true
-  $_db_cancelled && { echo "" >&3; return; }
+  if $_db_cancelled; then echo "" >&3; pop_breadcrumb; clear_keyhints; return; fi
   local_port="${local_port:-15432}"
 
   if ! _validate_port "$local_port"; then
     err "Invalid port number (must be 1-65535)."
+    pop_breadcrumb
+    clear_keyhints
     return
   fi
 
@@ -230,6 +282,8 @@ db_forward() {
   if ! kubectl run "$pod_name" -n "$ns" --image=alpine/socat --restart=Never -- \
     "TCP-LISTEN:${db_port},fork" "TCP:${db_host}:${db_port}" >&3 2>&3; then
     err "Failed to create socat pod."
+    pop_breadcrumb
+    clear_keyhints
     return
   fi
 
@@ -237,6 +291,8 @@ db_forward() {
   if ! kubectl wait --for=condition=Ready "pod/${pod_name}" -n "$ns" --timeout=60s >&3 2>&3; then
     err "Pod failed to start. Cleaning up..."
     kubectl delete pod "$pod_name" -n "$ns" --ignore-not-found 2>/dev/null
+    pop_breadcrumb
+    clear_keyhints
     return
   fi
 
@@ -291,9 +347,13 @@ db_forward() {
 
     # Restore terminal
     stty "$_old_stty" </dev/tty 2>/dev/null || true
+    pop_breadcrumb
+    clear_keyhints
     _db_cleanup_display
   else
     err "Port-forward failed (port $local_port may be in use)."
+    pop_breadcrumb
+    clear_keyhints
     _db_cleanup_display
   fi
 }
