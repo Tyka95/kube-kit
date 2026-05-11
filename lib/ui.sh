@@ -507,11 +507,6 @@ choose_menu() {
   }
 
   while true; do
-    # Re-apply raw mode each iteration so external programs (gum confirm,
-    # aws sso login, etc.) that may have toggled the terminal can't leak
-    # typed characters onto our screen as visible echo.
-    stty -echo -icanon min 0 time 1 </dev/tty 2>/dev/null || true
-
     if ! _readkey; then
       _tick || true
       # Only stat the terminal occasionally while idle.
