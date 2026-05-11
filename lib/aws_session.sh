@@ -39,3 +39,63 @@ aws_session_context_account() {
     printf '%s' "${BASH_REMATCH[1]}"
   fi
 }
+
+# Validate the resolved session via sts get-caller-identity.
+# Updates ACCOUNT, ARN, STATUS, ERROR, CHECKED_AT.
+# Skips work if last successful check was <60s ago, unless $1=1 (force).
+aws_session_validate() {
+  local force="${1:-0}"
+  local now
+  now=$(date +%s)
+
+  if [[ "$force" != "1" && "$AWS_SESSION_STATUS" == "ok" ]]; then
+    if (( now - AWS_SESSION_CHECKED_AT < 60 )); then
+      return 0
+    fi
+  fi
+
+  aws_session_resolve
+
+  if ! command -v aws &>/dev/null; then
+    AWS_SESSION_STATUS="no-aws"
+    AWS_SESSION_ACCOUNT=""
+    AWS_SESSION_ARN=""
+    AWS_SESSION_ERROR="aws cli not installed"
+    return 1
+  fi
+
+  local args=()
+  [[ -n "$AWS_SESSION_PROFILE" ]] && args+=(--profile "$AWS_SESSION_PROFILE")
+  [[ -n "$AWS_SESSION_REGION" ]] && args+=(--region "$AWS_SESSION_REGION")
+  args+=(--cli-connect-timeout 3 --cli-read-timeout 5 --output text --query 'Account,Arn')
+
+  local out err rc=0
+  err=$(mktemp)
+  out=$(aws sts get-caller-identity "${args[@]}" 2>"$err") || rc=$?
+
+  if (( rc == 0 )) && [[ -n "$out" ]]; then
+    AWS_SESSION_ACCOUNT="${out%%[[:space:]]*}"
+    AWS_SESSION_ARN="${out#*[[:space:]]}"
+    AWS_SESSION_STATUS="ok"
+    AWS_SESSION_ERROR=""
+    AWS_SESSION_CHECKED_AT="$now"
+    rm -f "$err"
+    return 0
+  fi
+
+  local err_line
+  err_line=$(head -n1 "$err" 2>/dev/null)
+  rm -f "$err"
+  AWS_SESSION_ACCOUNT=""
+  AWS_SESSION_ARN=""
+  AWS_SESSION_ERROR="${err_line:-sts call failed}"
+  if [[ "$err_line" == *"ExpiredToken"* || "$err_line" == *"InvalidClientTokenId"* || \
+        "$err_line" == *"Token has expired"* || "$err_line" == *"SSO session"* ]]; then
+    AWS_SESSION_STATUS="expired"
+  elif [[ -z "$AWS_SESSION_PROFILE" && -z "${AWS_ACCESS_KEY_ID:-}" ]]; then
+    AWS_SESSION_STATUS="no-aws"
+  else
+    AWS_SESSION_STATUS="expired"
+  fi
+  return 1
+}
