@@ -16,10 +16,14 @@ sso_login() {
   draw_chrome
   if ((rc == 0)); then
     ok "Logged in as $profile."
+    AWS_SESSION_PROFILE="$profile"
+    aws_session_context_changed
+    aws_session_validate 1 || true
   else
     err "SSO login failed."
   fi
   _refresh_ctx || true
+  _redraw_footer || true
   divider
 }
 
@@ -37,7 +41,10 @@ switch_context() {
 
   kubectl config use-context "$selected" >/dev/null 2>&1
   ok "Switched to $selected."
+  aws_session_context_changed
   _refresh_ctx
+  aws_session_validate 1 || true
+  _redraw_footer || true
   divider
 }
 
@@ -45,7 +52,12 @@ connect_cluster() {
   header "Connect EKS Cluster"
   local profile
   profile=$(pick_aws_profile) || return
-  ensure_aws_session "$profile" || return
+  AWS_SESSION_PROFILE="$profile"
+  if ! aws_session_ensure; then
+    err "AWS session not ready for profile '$profile': ${AWS_SESSION_ERROR:-unavailable}."
+    pause
+    return
+  fi
 
   local regions=()
   if [[ ${#CFG_AWS_REGIONS[@]} -gt 0 ]]; then
@@ -96,7 +108,10 @@ connect_cluster() {
     dim "$line"
   done
   ok "Context set to $cluster ($region)."
+  aws_session_context_changed
   _refresh_ctx
+  aws_session_validate 1 || true
+  _redraw_footer || true
   divider
 }
 
@@ -104,7 +119,12 @@ list_buckets() {
   header "S3 Buckets"
   local profile
   profile=$(pick_aws_profile) || return
-  ensure_aws_session "$profile" || return
+  AWS_SESSION_PROFILE="$profile"
+  if ! aws_session_ensure; then
+    err "AWS session not ready for profile '$profile': ${AWS_SESSION_ERROR:-unavailable}."
+    pause
+    return
+  fi
   show_cmd "aws s3 ls --profile $profile"
   echo "" >&3
   aws s3 ls --profile "$profile" >&3
