@@ -334,6 +334,57 @@ choose_menu() {
     (( _META_W > 24 )) && _META_W=24
   }
 
+  # Render a single row by index. Reads the outer-scope sel/labels/etc.
+  # Used both for full _draw and for the cheap selection-move repaint that
+  # only touches the two affected rows.
+  _draw_row() {
+    local row="$1" idx="$2"
+    local lbl="${labels[$idx]:0:_LBL_W}"
+    local desc="${descs[$idx]:0:_DESC_W}"
+    local meta="${metas[$idx]:0:_META_W}"
+    local lbl_pad="$lbl"
+    while (( ${#lbl_pad}  < _LBL_W  )); do lbl_pad+=" "; done
+    local desc_pad="$desc"
+    while (( ${#desc_pad} < _DESC_W )); do desc_pad+=" "; done
+    local meta_pad=""
+    local _mp=$((_META_W - ${#meta}))
+    (( _mp < 0 )) && _mp=0
+    while (( ${#meta_pad} < _mp )); do meta_pad+=" "; done
+    meta_pad+="$meta"
+
+    local plain_text="  ${lbl_pad}   ${desc_pad}"
+    [[ -n "$meta" ]] && plain_text+="   ${meta_pad}"
+    while (( ${#plain_text} < TERM_W )); do plain_text+=" "; done
+    plain_text="${plain_text:0:TERM_W}"
+
+    printf '\033[%d;1H' "$row" >&3
+    if (( idx == sel )); then
+      printf '%s%s%s%s' "$C_BG_SELECT" "$C_PRIMARY" "$plain_text" "$C_RESET" >&3
+    else
+      printf '\033[2K%s%s%s' "$C_PRIMARY" "$plain_text" "$C_RESET" >&3
+    fi
+  }
+
+  # Move the selection from $1 → current $sel without redrawing everything.
+  # If the new selection is still visible, we only repaint the two affected
+  # rows (cheap, no full-screen flicker). If sel scrolled out of view, fall
+  # back to _draw which handles scroll + clear.
+  _smooth_select_move() {
+    local was=$1
+    if (( sel < scroll || sel >= scroll + visible )); then
+      _draw
+      return
+    fi
+    local list_top=$row_start
+    [[ -n "$_filter" ]] && list_top=$((row_start + 1))
+    local old_row=$((list_top + (was - scroll)))
+    local new_row=$((list_top + (sel - scroll)))
+    _draw_row "$old_row" "$was"
+    _draw_row "$new_row" "$sel"
+    PICKER_POSITION="$((sel + 1)) of ${count}"
+    _redraw_footer
+  }
+
   _draw() {
     ((count == 0)) && visible=0
     ((count > 0 && visible == 0)) && visible=1
@@ -368,45 +419,11 @@ choose_menu() {
       fi
 
       local row=$_list_start
-      local vis_row idx lbl desc meta plain_text
-      local lbl_pad desc_pad meta_pad
+      local vis_row
       for ((vis_row = 0; vis_row < visible; vis_row++)); do
-        idx=$((scroll + vis_row))
+        local idx=$((scroll + vis_row))
         (( idx >= count )) && break
-
-        lbl="${labels[$idx]:0:_LBL_W}"
-        desc="${descs[$idx]:0:_DESC_W}"
-        meta="${metas[$idx]:0:_META_W}"
-
-        lbl_pad="$lbl"
-        while (( ${#lbl_pad}  < _LBL_W  )); do lbl_pad+=" "; done
-        desc_pad="$desc"
-        while (( ${#desc_pad} < _DESC_W )); do desc_pad+=" "; done
-        meta_pad=""
-        local _mp=$((_META_W - ${#meta}))
-        (( _mp < 0 )) && _mp=0
-        while (( ${#meta_pad} < _mp )); do meta_pad+=" "; done
-        meta_pad+="$meta"
-
-        # Always 2-space lead-in regardless of selection. Selection is
-        # signaled by reverse-video on the entire padded row, not by a
-        # leading '>' indicator (which previously drifted the columns by
-        # one cell on every move).
-        plain_text="  ${lbl_pad}   ${desc_pad}"
-        [[ -n "$meta" ]] && plain_text+="   ${meta_pad}"
-
-        # Right-pad the whole row to the terminal width so the reverse
-        # bar reaches the right edge (k9s/lazygit pattern).
-        while (( ${#plain_text} < TERM_W )); do plain_text+=" "; done
-        plain_text="${plain_text:0:TERM_W}"
-
-        printf '\033[%d;1H' "$row"
-        if (( idx == sel )); then
-          printf '%s%s%s' "$C_REVERSE" "$plain_text" "$C_RESET"
-        else
-          printf '\033[2K%s%s%s' "$C_PRIMARY" "$plain_text" "$C_RESET"
-        fi
-
+        _draw_row "$row" "$idx"
         row=$((row + 1))
       done
 
@@ -506,22 +523,16 @@ choose_menu() {
     case "$key" in
       1b5b41|1b4f41)
         if ((count > 0)); then
+          local _was_sel=$sel
           if ((sel > 0)); then ((sel--)); else sel=$((count - 1)); fi
-          _draw
-          # No shimmer pulse — the full-row reverse-video already marks
-          # the selection clearly and the pulse misaligned with the row
-          # prefix, producing the 'duplicate trailing letter' artifact.
-          :
+          _smooth_select_move "$_was_sel"
         fi
         continue ;;
       1b5b42|1b4f42)
         if ((count > 0)); then
+          local _was_sel=$sel
           if ((sel < count - 1)); then ((sel++)); else sel=0; fi
-          _draw
-          # No shimmer pulse — the full-row reverse-video already marks
-          # the selection clearly and the pulse misaligned with the row
-          # prefix, producing the 'duplicate trailing letter' artifact.
-          :
+          _smooth_select_move "$_was_sel"
         fi
         continue ;;
       1b5b43|1b4f43)
