@@ -87,7 +87,7 @@ _discover_db_targets() {
 db_forward() {
   header "Database Tunnel"
 
-  # Build target list: config entries + auto-discovered + custom.
+  # Start from configured targets.
   local _db_options=()
   if [[ ${#CFG_DB_TARGETS[@]} -gt 0 ]]; then
     for _dbt in "${CFG_DB_TARGETS[@]}"; do
@@ -95,14 +95,39 @@ db_forward() {
     done
   fi
 
-  dim "Discovering databases via AWS RDS..."
-  _discover_db_targets
-  clear_content
-  header "Database Tunnel"
+  # Gate: try to ensure an authenticated AWS session before discovery.
+  local _can_discover=0
+  if aws_session_ensure; then
+    _can_discover=1
+  fi
 
-  if [[ ${#_DB_DISCOVERED[@]} -gt 0 ]]; then
+  if (( _can_discover )); then
+    dim "Discovering databases in account ${AWS_SESSION_ACCOUNT} / region ${AWS_SESSION_REGION}..."
+    _discover_db_targets || true
+    clear_content
+    header "Database Tunnel"
+  fi
+
+  # Identity line: show what discovery used (or why it didn't run).
+  case "$AWS_SESSION_STATUS" in
+    ok)
+      local _ctx_acct
+      _ctx_acct=$(aws_session_context_account)
+      if [[ -n "$_ctx_acct" && "$_ctx_acct" != "$AWS_SESSION_ACCOUNT" ]]; then
+        warn "Profile '${AWS_SESSION_PROFILE}' is in account ${AWS_SESSION_ACCOUNT}, but kubectl context targets ${_ctx_acct}."
+      else
+        dim "Profile: ${AWS_SESSION_PROFILE}  •  Account: ${AWS_SESSION_ACCOUNT}  •  Region: ${AWS_SESSION_REGION}"
+      fi
+      ;;
+    expired) err "AWS session expired. Auto-discovery skipped. Pick a configured target or Custom endpoint." ;;
+    no-aws)  dim  "No AWS session available. Showing configured targets only." ;;
+    *)       dim  "AWS session unknown. Showing configured targets only." ;;
+  esac
+
+  # Merge discovered entries with dedup-by-hostname.
+  if [[ ${#DB_CACHE_ENTRIES[@]} -gt 0 ]]; then
     local _new_host _ex _dup
-    for _dbt in "${_DB_DISCOVERED[@]}"; do
+    for _dbt in "${DB_CACHE_ENTRIES[@]}"; do
       _new_host="${_dbt#*|}"
       _new_host="${_new_host%%|*}"
       _dup=false
@@ -113,6 +138,10 @@ db_forward() {
       fi
       $_dup || _db_options+=("$_dbt")
     done
+  fi
+
+  if [[ -n "$DB_CACHE_ERROR" ]]; then
+    err "Discovery error: ${DB_CACHE_ERROR}"
   fi
 
   _db_options+=("Custom endpoint")
