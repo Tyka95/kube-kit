@@ -191,6 +191,11 @@ _tick() {
   _TICK_COUNT=$((_TICK_COUNT + 1))
   if ((_TICK_COUNT % 150 == 0)); then
     _update_ttl || true
+    # Refresh AWS session every ~150 ticks (~30s of activity). Cheap thanks to
+    # the 60s TTL guard inside aws_session_validate.
+    if declare -F aws_session_validate &>/dev/null; then
+      aws_session_validate || true
+    fi
     _redraw_footer || true
   fi
   return 0

@@ -63,6 +63,9 @@ main() {
     kubectl config set-context --current --namespace="$_restored_ns" &>/dev/null || true
   fi
 
+  # Kick off the first AWS validate so the footer becomes accurate within seconds.
+  aws_session_validate || true
+
   _enter_alt_screen
   draw_chrome
 
