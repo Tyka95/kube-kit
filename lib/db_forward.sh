@@ -5,90 +5,83 @@ DB_PF_PID=""
 DB_PF_NS=""
 _DB_STOP=0
 
-_DB_DISCOVERED=()
+# In-memory DB discovery cache. Keyed by the validated identity at fetch time.
+# Any auth change zeros these via aws_session_context_changed.
+DB_CACHE_ACCOUNT=""
+DB_CACHE_REGION=""
+DB_CACHE_ENTRIES=()
+DB_CACHE_TS=0
+DB_CACHE_ERROR=""
 
-# Resolve the AWS profile relevant to the current kubectl context.
-# Order: kubeconfig exec env > AWS_PROFILE > AWS_DEFAULT_PROFILE > config default.
-_db_resolve_profile() {
-  local profile=""
-  profile=$(kubectl config view --minify -o jsonpath='{.users[0].user.exec.env[?(@.name=="AWS_PROFILE")].value}' 2>/dev/null) || true
-  [[ -z "$profile" ]] && profile="${AWS_PROFILE:-${AWS_DEFAULT_PROFILE:-${CFG_DEFAULT_PROFILE:-}}}"
-  printf '%s' "$profile"
-}
+_DB_CACHE_TTL=60
 
-# Resolve region from the active EKS context ARN, env, or config. Empty if unknown.
-_db_resolve_region() {
-  local region=""
-  local ctx
-  ctx=$(kubectl config current-context 2>/dev/null) || true
-  if [[ "$ctx" =~ arn:aws:eks:([a-z0-9-]+): ]]; then
-    region="${BASH_REMATCH[1]}"
-  fi
-  [[ -z "$region" ]] && region="${AWS_REGION:-${AWS_DEFAULT_REGION:-}}"
-  if [[ -z "$region" && ${#CFG_AWS_REGIONS[@]} -gt 0 ]]; then
-    region="${CFG_AWS_REGIONS[0]}"
-  fi
-  printf '%s' "$region"
-}
-
-# Populate _DB_DISCOVERED from AWS RDS describe-* for current profile/region.
-# Uses on-disk cache (5 min) keyed by profile+region.
+# Populate DB_CACHE_* from AWS RDS for the current session.
+# Honors a 60s in-memory TTL keyed on (account, region). Failures set
+# DB_CACHE_ERROR and do NOT bump DB_CACHE_TS, so the next call retries.
 _discover_db_targets() {
-  _DB_DISCOVERED=()
-  command -v aws &>/dev/null || return 0
-
-  local profile region
-  profile=$(_db_resolve_profile)
-  region=$(_db_resolve_region)
-  [[ -z "$region" ]] && return 0
-
-  local cache_dir="${HOME}/.local/state/kubekit"
-  local cache_file="${cache_dir}/db_cache_${profile:-default}_${region}"
-  [[ -d "$cache_dir" ]] || mkdir -p "$cache_dir"
-
-  if [[ -f "$cache_file" ]]; then
-    local mtime now age
-    mtime=$(stat -f %m "$cache_file" 2>/dev/null || stat -c %Y "$cache_file" 2>/dev/null || echo 0)
-    now=$(date +%s)
-    age=$(( now - mtime ))
-    if (( age < 300 )); then
-      while IFS= read -r line; do
-        [[ -n "$line" ]] && _DB_DISCOVERED+=("$line")
-      done < "$cache_file"
-      return 0
-    fi
+  if [[ "$AWS_SESSION_STATUS" != "ok" ]]; then
+    return 0
   fi
 
-  local aws_args=()
-  [[ -n "$profile" ]] && aws_args+=(--profile "$profile")
-  aws_args+=(--region "$region" --output text)
+  local now
+  now=$(date +%s)
 
-  local clusters instances
-  clusters=$(aws rds describe-db-clusters "${aws_args[@]}" \
-    --query 'DBClusters[].[DBClusterIdentifier,Endpoint,Port]' 2>/dev/null) || clusters=""
-  instances=$(aws rds describe-db-instances "${aws_args[@]}" \
-    --query 'DBInstances[?DBClusterIdentifier==`null`].[DBInstanceIdentifier,Endpoint.Address,Endpoint.Port]' 2>/dev/null) || instances=""
+  if [[ "$DB_CACHE_ACCOUNT" == "$AWS_SESSION_ACCOUNT" \
+     && "$DB_CACHE_REGION"  == "$AWS_SESSION_REGION" \
+     && $((now - DB_CACHE_TS)) -lt $_DB_CACHE_TTL ]]; then
+    return 0
+  fi
 
-  : > "$cache_file"
-  local id endpoint port entry tag="${profile:-default}"
+  local args=()
+  [[ -n "$AWS_SESSION_PROFILE" ]] && args+=(--profile "$AWS_SESSION_PROFILE")
+  args+=(--region "$AWS_SESSION_REGION" --output text)
+  args+=(--cli-connect-timeout 3 --cli-read-timeout 8)
+
+  local clusters instances err_file rc=0
+  err_file=$(mktemp)
+
+  clusters=$(aws rds describe-db-clusters "${args[@]}" \
+    --query 'DBClusters[].[DBClusterIdentifier,Endpoint,Port]' 2>"$err_file") || rc=$?
+  if (( rc != 0 )); then
+    DB_CACHE_ERROR=$(head -n1 "$err_file" 2>/dev/null)
+    rm -f "$err_file"
+    return 1
+  fi
+
+  instances=$(aws rds describe-db-instances "${args[@]}" \
+    --query 'DBInstances[?DBClusterIdentifier==`null`].[DBInstanceIdentifier,Endpoint.Address,Endpoint.Port]' 2>"$err_file") || rc=$?
+  if (( rc != 0 )); then
+    DB_CACHE_ERROR=$(head -n1 "$err_file" 2>/dev/null)
+    rm -f "$err_file"
+    return 1
+  fi
+  rm -f "$err_file"
+
+  local id endpoint port entry
+  local tag="${AWS_SESSION_PROFILE:-default}"
+  DB_CACHE_ENTRIES=()
 
   if [[ -n "$clusters" ]]; then
     while IFS=$'\t' read -r id endpoint port; do
       [[ -z "$id" || -z "$endpoint" || "$endpoint" == "None" ]] && continue
-      entry="${id} (${region}) [${tag}]|${endpoint}|${port:-5432}"
-      _DB_DISCOVERED+=("$entry")
-      printf '%s\n' "$entry" >> "$cache_file"
+      entry="${id} (${AWS_SESSION_REGION}) [${tag}]|${endpoint}|${port:-5432}"
+      DB_CACHE_ENTRIES+=("$entry")
     done <<< "$clusters"
   fi
 
   if [[ -n "$instances" ]]; then
     while IFS=$'\t' read -r id endpoint port; do
       [[ -z "$id" || -z "$endpoint" || "$endpoint" == "None" ]] && continue
-      entry="${id} (${region}) [${tag}]|${endpoint}|${port:-5432}"
-      _DB_DISCOVERED+=("$entry")
-      printf '%s\n' "$entry" >> "$cache_file"
+      entry="${id} (${AWS_SESSION_REGION}) [${tag}]|${endpoint}|${port:-5432}"
+      DB_CACHE_ENTRIES+=("$entry")
     done <<< "$instances"
   fi
+
+  DB_CACHE_ACCOUNT="$AWS_SESSION_ACCOUNT"
+  DB_CACHE_REGION="$AWS_SESSION_REGION"
+  DB_CACHE_TS="$now"
+  DB_CACHE_ERROR=""
+  return 0
 }
 
 db_forward() {
