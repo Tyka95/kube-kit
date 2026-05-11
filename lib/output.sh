@@ -5,24 +5,24 @@ BREADCRUMB=""
 header() {
   echo "" >&3
   printf '  %s── %s %s──────────────────────────────────────────%s\n' \
-    "$C_CYAN" "$1" "$C_DIM" "$C_RESET" >&3
+    "$C_ACCENT" "$1" "$C_MUTED" "$C_RESET" >&3
   echo "" >&3
 }
 
-ok()       { printf '  %s✓%s %s\n' "$C_GREEN" "$C_RESET" "$1" >&3; }
-warn()     { printf '  %s!%s %s\n' "$C_YELLOW" "$C_RESET" "$1" >&3; }
-err()      { printf '  %s✗%s %s\n' "$C_RED" "$C_RESET" "$1" >&3; }
-dim()      { printf '  %s%s%s\n' "$C_DIM" "$1" "$C_RESET" >&3; }
-show_cmd() { printf '  %s$ %s%s\n' "$C_DIM" "$1" "$C_RESET" >&3; }
+ok()       { printf '  %s✓%s %s\n' "$C_SUCCESS" "$C_RESET" "$1" >&3; }
+warn()     { printf '  %s!%s %s\n' "$C_WARN" "$C_RESET" "$1" >&3; }
+err()      { printf '  %s✗%s %s\n' "$C_DANGER" "$C_RESET" "$1" >&3; }
+dim()      { printf '  %s%s%s\n' "$C_MUTED" "$1" "$C_RESET" >&3; }
+show_cmd() { printf '  %s$ %s%s\n' "$C_MUTED" "$1" "$C_RESET" >&3; }
 
 divider() {
-  printf '  %s────────────────────────────────────────────────%s\n' "$C_DIM" "$C_RESET" >&3
+  printf '  %s────────────────────────────────────────────────%s\n' "$C_MUTED" "$C_RESET" >&3
 }
 
 pause() {
   echo "" >&3
   _redraw_footer
-  printf '  %spress any key...%s' "$C_DIM" "$C_RESET" >&3
+  printf '  %spress any key...%s' "$C_MUTED" "$C_RESET" >&3
   read -rsn1
 }
 

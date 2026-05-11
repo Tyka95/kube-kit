@@ -21,9 +21,9 @@ _update_anim() {
   printf '\033[2;%dH  ' "$col" >&3
   local clr
   case $ANIM_PHASE in
-    0) clr="$C_WHITE_B" ;;   # flash bright
-    1) clr="$C_LCYAN" ;;     # bright cyan
-    2) clr="$C_CYAN" ;;      # normal — hold longest
+    0) clr="$C_PRIMARY" ;;   # flash bright
+    1) clr="$C_ACCENT" ;;     # bright cyan
+    2) clr="$C_ACCENT" ;;      # normal — hold longest
   esac
   printf '\033[2;%dH%s%s%s' "$col" "$clr" "$icon" "$C_RESET" >&3
   printf '\033[u' >&3
@@ -72,7 +72,7 @@ _shimmer_tick() {
   printf '\033[s' >&3
 
   # 3-char wide shimmer: trail, center (bright), lead
-  # Colors: C_CYAN (trail), C_LCYAN (center), C_WHITE_B (lead)
+  # Colors: C_ACCENT (trail), C_ACCENT (center), C_PRIMARY (lead)
   local p0=$((SHIMMER_POS - 2 * SHIMMER_DIR))  # tail to restore
   local p1=$((SHIMMER_POS - SHIMMER_DIR))       # trail
   local p2=$SHIMMER_POS                          # center (brightest)
@@ -84,8 +84,8 @@ _shimmer_tick() {
     if ((p >= 0 && p < len)); then
       local ch="${text:$p:1}"
       local c=$((p + 1))
-      clr="$C_WHITE_B"
-      if ((p >= SHIMMER_DESC_START)); then clr="$C_LCYAN"; fi
+      clr="$C_PRIMARY"
+      if ((p >= SHIMMER_DESC_START)); then clr="$C_ACCENT"; fi
       printf '\033[%d;%dH%s%s%s' "$row" "$c" "$clr" "$ch" "$C_RESET" >&3
     fi
   done
@@ -97,13 +97,13 @@ _shimmer_tick() {
       local c=$((p + 1))
       if [[ "$ch" != " " ]]; then
         if ((p >= SHIMMER_DESC_START)); then
-          s_clr="$C_LBLUE"
+          s_clr="$C_ACCENT"
         elif ((p == p2)); then
-          s_clr="$C_WHITE_B"
+          s_clr="$C_PRIMARY"
         elif ((p == p1)); then
-          s_clr="$C_CYAN"
+          s_clr="$C_ACCENT"
         else
-          s_clr="$C_LCYAN"
+          s_clr="$C_ACCENT"
         fi
         printf '\033[%d;%dH%s%s%s' "$row" "$c" "$s_clr" "$ch" "$C_RESET" >&3
       fi
@@ -126,8 +126,8 @@ _shimmer_tick() {
       if ((rp >= 0 && rp < len)); then
         local ch="${text:$rp:1}"
         local c=$((rp + 1))
-        clr="$C_WHITE_B"
-        if ((rp >= SHIMMER_DESC_START)); then clr="$C_LCYAN"; fi
+        clr="$C_PRIMARY"
+        if ((rp >= SHIMMER_DESC_START)); then clr="$C_ACCENT"; fi
         printf '\033[s\033[%d;%dH%s%s%s\033[u' "$row" "$c" "$clr" "$ch" "$C_RESET" >&3
       fi
     done
@@ -148,7 +148,7 @@ _update_spinner() {
   SPINNER_IDX=$(( (SPINNER_IDX + 1) % ${#SPINNER_FRAMES[@]} ))
   local frame="${SPINNER_FRAMES[$SPINNER_IDX]}"
   printf '\033[s' >&3
-  printf '\033[%d;%dH%s%s%s' "$SPINNER_ROW" "$SPINNER_COL" "$C_LCYAN" "$frame" "$C_RESET" >&3
+  printf '\033[%d;%dH%s%s%s' "$SPINNER_ROW" "$SPINNER_COL" "$C_ACCENT" "$frame" "$C_RESET" >&3
   printf '\033[u' >&3
   return 0
 }
@@ -165,7 +165,7 @@ _select_flash() {
   local _saved_spinner=$SPINNER_ROW _saved_shimmer=$SHIMMER_SEL_IDX
   SPINNER_ROW=0; SHIMMER_SEL_IDX=-1
 
-  local colors=("$C_WHITE_B" "$C_LCYAN" "$C_CYAN" "$C_DIM")
+  local colors=("$C_PRIMARY" "$C_ACCENT" "$C_ACCENT" "$C_MUTED")
   local delays=(40 50 40 30)
 
   local phase

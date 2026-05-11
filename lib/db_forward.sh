@@ -177,10 +177,10 @@ db_forward() {
   done
   if ! $_matched; then
     drain_stdin
-    printf '  %sHost%s %s(Ctrl+C to cancel)%s: ' "$C_CYAN_B" "$C_RESET" "$C_DIM" "$C_RESET" >&3
+    printf '  %sHost%s %s(Ctrl+C to cancel)%s: ' "$C_ACCENT" "$C_RESET" "$C_MUTED" "$C_RESET" >&3
     read -r db_host < /dev/tty || true
     $_db_cancelled && { echo "" >&3; return; }
-    printf '  %sDB Port%s [%s5432%s]: ' "$C_CYAN_B" "$C_RESET" "$C_DIM" "$C_RESET" >&3
+    printf '  %sDB Port%s [%s5432%s]: ' "$C_ACCENT" "$C_RESET" "$C_MUTED" "$C_RESET" >&3
     read -r db_port < /dev/tty || true
     $_db_cancelled && { echo "" >&3; return; }
     db_port="${db_port:-5432}"
@@ -189,7 +189,7 @@ db_forward() {
 
   local local_port
   drain_stdin
-  printf '  %sLocal port%s [%s15432%s] %s(Ctrl+C to cancel)%s: ' "$C_CYAN_B" "$C_RESET" "$C_DIM" "$C_RESET" "$C_DIM" "$C_RESET" >&3
+  printf '  %sLocal port%s [%s15432%s] %s(Ctrl+C to cancel)%s: ' "$C_ACCENT" "$C_RESET" "$C_MUTED" "$C_RESET" "$C_MUTED" "$C_RESET" >&3
   read -r local_port < /dev/tty || true
   $_db_cancelled && { echo "" >&3; return; }
   local_port="${local_port:-15432}"
@@ -231,7 +231,7 @@ db_forward() {
     echo "" >&3
     ok "Tunnel active: localhost:$local_port -> $db_host:$db_port"
     echo "" >&3
-    printf '  %sConnect with:%s\n' "$C_CYAN_B" "$C_RESET" >&3
+    printf '  %sConnect with:%s\n' "$C_ACCENT" "$C_RESET" >&3
     dim "psql \"host=localhost port=$local_port dbname=<db> user=<user>\""
     echo "" >&3
     divider

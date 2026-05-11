@@ -20,7 +20,7 @@ _header_bar() {
   # Row 1: full-width top border
   local border=""
   for ((i = 0; i < w; i++)); do border+="─"; done
-  printf '%s%s%s\n' "$C_DIM" "$border" "$C_RESET"
+  printf '%s%s%s\n' "$C_MUTED" "$border" "$C_RESET"
   # Row 2: "  X KubeKit v0.1.5 ────────..."  (X = animated icon placeholder)
   local ver_label="KubeKit v${VERSION}"
   local prefix_len=$((4 + ${#ver_label} + 1))  # "  XX {ver_label} "
@@ -29,7 +29,7 @@ _header_bar() {
   local line=""
   for ((i = 0; i < fill; i++)); do line+="─"; done
   # 4 leading spaces: 2 margin + 2 for icon (overwritten by _update_anim)
-  printf '    %s%s%s %s%s%s\n' "$C_WHITE_B" "$ver_label" "$C_RESET" "$C_DIM" "$line" "$C_RESET"
+  printf '    %s%s%s %s%s%s\n' "$C_PRIMARY" "$ver_label" "$C_RESET" "$C_MUTED" "$line" "$C_RESET"
 }
 
 _footer_bar() {
@@ -39,41 +39,41 @@ _footer_bar() {
 
   local _ftr=""
   if [[ -n "$_CTX_CLUSTER" ]]; then
-    _ftr+="${C_CYAN}⎈${C_RESET} ${_CTX_CLUSTER}"
+    _ftr+="${C_ACCENT}⎈${C_RESET} ${_CTX_CLUSTER}"
   else
-    _ftr+="${C_RED}⎈${C_RESET} no cluster"
+    _ftr+="${C_DANGER}⎈${C_RESET} no cluster"
   fi
-  _ftr+="  ${C_DIM}│${C_RESET}  ${C_CYAN}⬡${C_RESET} ${_CTX_NS:-default}"
+  _ftr+="  ${C_MUTED}│${C_RESET}  ${C_ACCENT}⬡${C_RESET} ${_CTX_NS:-default}"
   if [[ -n "$AWS_SESSION_PROFILE" || "$AWS_SESSION_STATUS" != "unknown" ]]; then
-    _ftr+="  ${C_DIM}│${C_RESET}  ${C_CYAN}☁${C_RESET} ${AWS_SESSION_PROFILE:-<none>}"
+    _ftr+="  ${C_MUTED}│${C_RESET}  ${C_ACCENT}☁${C_RESET} ${AWS_SESSION_PROFILE:-<none>}"
     local _ctx_acct _glyph _detail
     _ctx_acct=$(aws_session_context_account)
     case "$AWS_SESSION_STATUS" in
       ok)
         if [[ -n "$_ctx_acct" && -n "$AWS_SESSION_ACCOUNT" && "$_ctx_acct" != "$AWS_SESSION_ACCOUNT" ]]; then
-          _glyph="${C_YELLOW}⚠${C_RESET}"
-          _detail="${C_YELLOW}mismatch ⟶ ${_ctx_acct}${C_RESET}"
+          _glyph="${C_WARN}⚠${C_RESET}"
+          _detail="${C_WARN}mismatch ⟶ ${_ctx_acct}${C_RESET}"
         else
-          _glyph="${C_GREEN}✓${C_RESET}"
-          _detail="${C_DIM}${AWS_SESSION_ACCOUNT}${C_RESET}"
+          _glyph="${C_SUCCESS}✓${C_RESET}"
+          _detail="${C_MUTED}${AWS_SESSION_ACCOUNT}${C_RESET}"
         fi
         ;;
       expired)
-        _glyph="${C_RED}✗${C_RESET}"
-        _detail="${C_RED}expired${C_RESET}"
+        _glyph="${C_DANGER}✗${C_RESET}"
+        _detail="${C_DANGER}expired${C_RESET}"
         ;;
       no-aws)
-        _glyph="${C_DIM}–${C_RESET}"
-        _detail="${C_DIM}no aws${C_RESET}"
+        _glyph="${C_MUTED}–${C_RESET}"
+        _detail="${C_MUTED}no aws${C_RESET}"
         ;;
       *)
-        _glyph="${C_DIM}…${C_RESET}"
-        _detail="${C_DIM}validating${C_RESET}"
+        _glyph="${C_MUTED}…${C_RESET}"
+        _detail="${C_MUTED}validating${C_RESET}"
         ;;
     esac
     _ftr+=" ${_glyph} ${_detail}"
   fi
-  printf '%s%s%s\n' "$C_DIM" "$border" "$C_RESET"
+  printf '%s%s%s\n' "$C_MUTED" "$border" "$C_RESET"
   printf ' %s' "$_ftr"
 }
 
@@ -213,18 +213,18 @@ choose_menu() {
         if [[ -n "$BREADCRUMB" ]]; then
           local _title_text="  ⎈  ${BREADCRUMB} › ${title}  / ${_filter} "
           printf '\033[K  %s⎈  %s%s › %s%s  %s/ %s%s\n' \
-            "$C_DIM" "$BREADCRUMB" "$C_RESET" "$C_CYAN_B" "$title" "$C_YELLOW" "$_filter" "$C_RESET"
+            "$C_MUTED" "$BREADCRUMB" "$C_RESET" "$C_ACCENT" "$title" "$C_WARN" "$_filter" "$C_RESET"
         else
           local _title_text="  ⎈  ${title}  / ${_filter} "
           printf '\033[K  %s⎈  %s  %s/ %s%s\n' \
-            "$C_CYAN_B" "$title" "$C_YELLOW" "$_filter" "$C_RESET"
+            "$C_ACCENT" "$title" "$C_WARN" "$_filter" "$C_RESET"
         fi
       elif [[ -n "$BREADCRUMB" ]]; then
         local _title_text="  ⎈  ${BREADCRUMB} › ${title} "
-        printf '\033[K  %s⎈  %s%s › %s%s %s\n' "$C_DIM" "$BREADCRUMB" "$C_RESET" "$C_CYAN_B" "$title" "$C_RESET"
+        printf '\033[K  %s⎈  %s%s › %s%s %s\n' "$C_MUTED" "$BREADCRUMB" "$C_RESET" "$C_ACCENT" "$title" "$C_RESET"
       else
         local _title_text="  ⎈  ${title} "
-        printf '\033[K  %s⎈  %s %s\n' "$C_CYAN_B" "$title" "$C_RESET"
+        printf '\033[K  %s⎈  %s %s\n' "$C_ACCENT" "$title" "$C_RESET"
       fi
       SPINNER_ROW=4
       SPINNER_COL=$((${#_title_text} + 1))
@@ -246,7 +246,7 @@ choose_menu() {
       SHIMMER_DIR=1
 
       if ((count == 0)); then
-        printf '\033[K  %sno matches%s\n' "$C_DIM" "$C_RESET"
+        printf '\033[K  %sno matches%s\n' "$C_MUTED" "$C_RESET"
       fi
 
       for ((i = 0; i < visible; i++)); do
@@ -262,9 +262,9 @@ choose_menu() {
           full_line="   ❯ ${_lbl}${_padding}"
           local _desc_start=${#full_line}
           [[ -n "${descs[$idx]}" ]] && full_line+="  ${descs[$idx]}"
-          printf '  %s ❯ %s%s%s' "$C_WHITE_B" "$_lbl" "$_padding" "$C_RESET"
+          printf '  %s ❯ %s%s%s' "$C_PRIMARY" "$_lbl" "$_padding" "$C_RESET"
           if [[ -n "${descs[$idx]}" ]]; then
-            printf '  %s%s%s' "$C_LCYAN" "${descs[$idx]}" "$C_RESET"
+            printf '  %s%s%s' "$C_ACCENT" "${descs[$idx]}" "$C_RESET"
           fi
           printf '\n'
           SHIMMER_SEL_IDX=$i
@@ -272,9 +272,9 @@ choose_menu() {
         else
           full_line="     ${_lbl}${_padding}"
           [[ -n "${descs[$idx]}" ]] && full_line+="  ${descs[$idx]}"
-          printf '  %s   %s%s%s' "$C_DIM" "$_lbl" "$_padding" "$C_RESET"
+          printf '  %s   %s%s%s' "$C_MUTED" "$_lbl" "$_padding" "$C_RESET"
           if [[ -n "${descs[$idx]}" ]]; then
-            printf '  %s%s%s' "$C_DIM" "${descs[$idx]}" "$C_RESET"
+            printf '  %s%s%s' "$C_MUTED" "${descs[$idx]}" "$C_RESET"
           fi
           printf '\n'
         fi
@@ -294,10 +294,10 @@ choose_menu() {
       printf '\033[K\n'
       if [[ -n "$_filter" ]]; then
         printf '\033[K  %s↑↓%s navigate  %s→/Enter%s select  %s←/esc%s back  %sBksp%s erase  %stype%s to filter\n' \
-          "$C_LCYAN" "$C_DIM" "$C_LCYAN" "$C_DIM" "$C_LCYAN" "$C_DIM" "$C_LCYAN" "$C_DIM" "$C_LCYAN" "$C_RESET"
+          "$C_ACCENT" "$C_MUTED" "$C_ACCENT" "$C_MUTED" "$C_ACCENT" "$C_MUTED" "$C_ACCENT" "$C_MUTED" "$C_ACCENT" "$C_RESET"
       else
         printf '\033[K  %s↑↓%s navigate  %s→/Enter%s select  %s←/esc%s back  %sc%s clear  %sq%s quit  %stype%s to filter\n' \
-          "$C_LCYAN" "$C_DIM" "$C_LCYAN" "$C_DIM" "$C_LCYAN" "$C_DIM" "$C_LCYAN" "$C_DIM" "$C_LCYAN" "$C_DIM" "$C_LCYAN" "$C_RESET"
+          "$C_ACCENT" "$C_MUTED" "$C_ACCENT" "$C_MUTED" "$C_ACCENT" "$C_MUTED" "$C_ACCENT" "$C_MUTED" "$C_ACCENT" "$C_MUTED" "$C_ACCENT" "$C_RESET"
       fi
 
       # Footer pinned at bottom
