@@ -525,9 +525,10 @@ choose_menu() {
     local key="$_HEX"
     local old_sel=$sel
 
-    # Arrow keys: 1b5b41=up, 1b5b42=down, 1b5b43=right, 1b5b44=left
+    # Arrow keys: CSI form (1b5b...) and SS3/application-keypad form (1b4f...).
+    # 41=up, 42=down, 43=right, 44=left.
     case "$key" in
-      1b5b41)
+      1b5b41|1b4f41)
         if ((count > 0)); then
           if ((sel > 0)); then ((sel--)); else sel=$((count - 1)); fi
           _draw
@@ -536,7 +537,7 @@ choose_menu() {
           fi
         fi
         continue ;;
-      1b5b42)
+      1b5b42|1b4f42)
         if ((count > 0)); then
           if ((sel < count - 1)); then ((sel++)); else sel=0; fi
           _draw
@@ -545,7 +546,7 @@ choose_menu() {
           fi
         fi
         continue ;;
-      1b5b43)
+      1b5b43|1b4f43)
         if ((count > 0)); then
           PICKER_RESULT_KIND="select"
           PICKER_RESULT_VALUE="${labels[$sel]}"
@@ -553,7 +554,7 @@ choose_menu() {
           return 0
         fi
         continue ;;
-      1b5b44)
+      1b5b44|1b4f44)
         if [[ -n "$_filter" ]]; then
           _filter=""; _apply_filter; visible=$((count < max_visible ? count : max_visible)); _draw; continue
         fi
