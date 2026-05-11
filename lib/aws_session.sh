@@ -99,3 +99,69 @@ aws_session_validate() {
   fi
   return 1
 }
+
+# Interactively run `aws sso login --profile <P>` and re-validate.
+# Returns 0 if STATUS=ok after login, 1 otherwise.
+aws_session_login() {
+  if [[ -z "$AWS_SESSION_PROFILE" ]]; then
+    AWS_SESSION_ERROR="no profile to log in with"
+    return 1
+  fi
+  if ! command -v aws &>/dev/null; then
+    AWS_SESSION_STATUS="no-aws"
+    AWS_SESSION_ERROR="aws cli not installed"
+    return 1
+  fi
+
+  # run_interactive is defined in lib/session.sh; if absent, fall back to direct call.
+  if declare -F run_interactive &>/dev/null; then
+    run_interactive aws sso login --profile "$AWS_SESSION_PROFILE" || true
+  else
+    aws sso login --profile "$AWS_SESSION_PROFILE" >&3 2>&3 || true
+  fi
+  aws_session_validate 1
+}
+
+# Gate for every AWS-using action.
+# - STATUS=ok      → return 0 immediately (or after a fresh validate if TTL expired).
+# - STATUS=expired → prompt the user (gum confirm) to run `aws sso login`; retry once.
+# - STATUS=no-aws  → return 1 silently; caller is expected to skip discovery gracefully.
+aws_session_ensure() {
+  aws_session_validate
+  case "$AWS_SESSION_STATUS" in
+    ok)     return 0 ;;
+    no-aws) return 1 ;;
+    expired)
+      local prompt="AWS session expired for profile '${AWS_SESSION_PROFILE:-<none>}'. Run 'aws sso login' now?"
+      if command -v gum &>/dev/null && gum confirm "$prompt"; then
+        aws_session_login && return 0
+      fi
+      return 1
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+# Call when kubectl context or AWS profile changes — forces re-resolve and invalidates
+# any downstream caches keyed on the previous identity.
+aws_session_context_changed() {
+  AWS_SESSION_STATUS="unknown"
+  AWS_SESSION_ACCOUNT=""
+  AWS_SESSION_ARN=""
+  AWS_SESSION_CHECKED_AT=0
+  aws_session_resolve
+  # Clear in-memory DB cache (variables defined in db_forward.sh).
+  DB_CACHE_ACCOUNT=""
+  DB_CACHE_REGION=""
+  DB_CACHE_ENTRIES=()
+  DB_CACHE_TS=0
+  DB_CACHE_ERROR=""
+}
+
+# One-time cleanup of stale on-disk cache from pre-P1 versions.
+_aws_session_cleanup_legacy() {
+  local d="${HOME}/.local/state/kubekit"
+  [[ -d "$d" ]] || return 0
+  rm -f "$d"/db_cache_* 2>/dev/null || true
+}
+_aws_session_cleanup_legacy
