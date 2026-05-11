@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
-set -euo pipefail
+# pipefail is useful for catching subshell failures; -u catches unbound vars.
+# -e is intentionally OFF: this is an interactive TUI with many user-facing
+# paths that legitimately fail (gum cancel, kubectl unreachable, stty edge
+# cases) and using `cmd || true` defensively everywhere makes the code
+# brittle. Failures should surface as user-visible errors, not silent exits.
+set -uo pipefail
 
 VERSION="0.1.8" # x-release-please-version
 

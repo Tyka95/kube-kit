@@ -515,7 +515,15 @@ choose_menu() {
   local _old_stty=""
   _old_stty=$(stty -g </dev/tty 2>/dev/null) || _old_stty=""
   stty -echo -icanon min 0 time 1 </dev/tty 2>/dev/null || true
-  trap 'SPINNER_ROW=0; set_chrome_state idle; _redraw_footer; stty "${_old_stty:-}" </dev/tty 2>/dev/null; printf "\033[?25h" >&3' RETURN
+  trap '{
+    set +e
+    SPINNER_ROW=0
+    set_chrome_state idle 2>/dev/null
+    _redraw_footer 2>/dev/null
+    [[ -n "${_old_stty:-}" ]] && stty "${_old_stty}" </dev/tty 2>/dev/null
+    printf "\033[?25h" >&3 2>/dev/null
+    set -e
+  } || true' RETURN
 
   # _readkey: read up to 4 bytes from tty, return as hex string in _HEX.
   # Uses perl because bash 3.2 (macOS default) doesn't support fractional
