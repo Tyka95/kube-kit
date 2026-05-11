@@ -159,9 +159,11 @@ aws_session_context_changed() {
 }
 
 # One-time cleanup of stale on-disk cache from pre-P1 versions.
+# Use find rather than a glob so zsh's "no matches" error doesn't leak when
+# the directory exists but contains nothing matching.
 _aws_session_cleanup_legacy() {
   local d="${HOME}/.local/state/kubekit"
   [[ -d "$d" ]] || return 0
-  rm -f "$d"/db_cache_* 2>/dev/null || true
+  find "$d" -maxdepth 1 -type f -name 'db_cache_*' -exec rm -f {} + 2>/dev/null || true
 }
 _aws_session_cleanup_legacy
