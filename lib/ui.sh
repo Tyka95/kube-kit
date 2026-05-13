@@ -612,7 +612,6 @@ choose_menu() {
         if ((count > 0)); then
           PICKER_RESULT_KIND="select"
           PICKER_RESULT_VALUE="${labels[$sel]}"
-          echo "${labels[$sel]}"
           return 0
         fi
         continue ;;
@@ -637,7 +636,6 @@ choose_menu() {
       if ((count > 0)); then
         PICKER_RESULT_KIND="select"
         PICKER_RESULT_VALUE="${labels[$sel]}"
-        echo "${labels[$sel]}"
         return 0
       fi
       continue

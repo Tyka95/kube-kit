@@ -18,10 +18,12 @@ run_menu() {
     drain_stdin
 
     local display=("${item_labels[@]}" "← Back")
-    local choice rc=0
-    choice=$(choose_menu "$title" "${display[@]}") || rc=$?
+    local rc=0
+    choose_menu "$title" "${display[@]}" || rc=$?
     ((rc == 1)) && { BREADCRUMB="$prev_crumb"; return; }
     ((rc == 2)) && exit 0
+    [[ "$PICKER_RESULT_KIND" != "select" ]] && continue
+    local choice="$PICKER_RESULT_VALUE"
     [[ "$choice" == "← Back" ]] && { BREADCRUMB="$prev_crumb"; return; }
 
     for i in "${!item_labels[@]}"; do
