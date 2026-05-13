@@ -6,7 +6,7 @@
 # brittle. Failures should surface as user-visible errors, not silent exits.
 set -uo pipefail
 
-VERSION="0.1.10" # x-release-please-version
+VERSION="0.1.11" # x-release-please-version
 
 # ── Version flag (handle before anything else) ────────────────────────────────
 case "${1:-}" in
