@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.11](https://github.com/Tyka95/kube-kit/compare/v0.1.10...v0.1.11) (2026-05-13)
+
+
+### Bug Fixes
+
+* **ui:** stop choose_menu echoing label to stdout ([57e8cd5](https://github.com/Tyka95/kube-kit/commit/57e8cd578ae9cc034a106a7ed19b65c6b5828bbc))
+* **ui:** stop choose_menu echoing label to stdout ([e21bb21](https://github.com/Tyka95/kube-kit/commit/e21bb21756b2e84bb0c44a5bbb29fc6310988a4f))
+
 ## [0.1.10](https://github.com/Tyka95/kube-kit/compare/v0.1.9...v0.1.10) (2026-05-11)
 
 
