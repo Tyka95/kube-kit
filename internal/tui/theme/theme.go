@@ -14,10 +14,11 @@ var (
 	Warn    lipgloss.AdaptiveColor = lipgloss.AdaptiveColor{Light: "#8f5e15", Dark: "#e0af68"}
 	Danger  lipgloss.AdaptiveColor = lipgloss.AdaptiveColor{Light: "#8c4351", Dark: "#f7768e"}
 
-	// SelectBG is the row-selection background. Tokyo Night highlight tone —
-	// more saturated than the previous dim navy so the selection actually pops.
+	// SelectBG is the row-selection background.
 	SelectBG     lipgloss.AdaptiveColor = lipgloss.AdaptiveColor{Light: "#c4d4ee", Dark: "#283457"}
-	SelectFlashBG lipgloss.AdaptiveColor = lipgloss.AdaptiveColor{Light: "#9bb4dc", Dark: "#3d4a7a"}
+	// SelectFlashBG is the brief on-move tint — significantly brighter than
+	// SelectBG so the eye registers the change in 150ms.
+	SelectFlashBG lipgloss.AdaptiveColor = lipgloss.AdaptiveColor{Light: "#7aa2f7", Dark: "#7aa2f7"}
 )
 
 // Pre-built styles. Use Copy() in callers to derive screen-specific variants.

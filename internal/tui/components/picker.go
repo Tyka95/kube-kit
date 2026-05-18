@@ -11,8 +11,9 @@ import (
 )
 
 // Animation: selection-move feedback. The newly-selected row paints with
-// SelectFlashBG for one tick (~80ms), then settles to SelectBG.
-const selectFlashDuration = 80 * time.Millisecond
+// SelectFlashBG for one tick, then settles to SelectBG. ~180ms is just long
+// enough to actually see the flash without feeling sluggish.
+const selectFlashDuration = 180 * time.Millisecond
 
 // pickerFlashEndMsg is dispatched after the flash interval expires; it tells
 // the picker to drop the flash style back to the normal selection bg.
