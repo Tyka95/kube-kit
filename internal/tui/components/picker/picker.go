@@ -32,19 +32,6 @@ const shimmerWidth = 3
 
 type pickerShimmerTickMsg struct{ token int }
 
-// Item is a row in the picker. Label is the value returned on selection.
-type Item struct {
-	Label  string
-	Detail string
-	Meta   string
-}
-
-// Bind is a per-screen custom keybinding (e.g. "r" → "refresh").
-type Bind struct {
-	Key    string
-	Action string
-}
-
 // Picker is a Bubble Tea sub-model.
 //
 // Use New() to construct, Update() / View() like any tea.Model. The picker
@@ -115,14 +102,6 @@ func New(title string, items []Item, binds []Bind) Picker {
 
 // SetSize updates the picker's available area.
 func (p *Picker) SetSize(width, height int) { p.Width = width; p.Height = height }
-
-// Position returns the current 1-based position of the cursor in the visible list.
-func (p Picker) Position() (int, int) {
-	if len(p.visible) == 0 {
-		return 0, 0
-	}
-	return p.cursor + 1, len(p.visible)
-}
 
 // Init is required by tea.Model.
 func (p Picker) Init() tea.Cmd { return nil }
@@ -324,23 +303,6 @@ func (p Picker) shimmerRangeMax() int {
 	// 80% of the visible row width — leaves a small idle margin at the
 	// edges so the band doesn't park against a border.
 	return (p.Width * 4) / 5
-}
-
-func (p *Picker) recomputeVisible() {
-	p.visible = p.visible[:0]
-	if p.filter == "" {
-		for i := range p.Items {
-			p.visible = append(p.visible, i)
-		}
-		return
-	}
-	needle := strings.ToLower(p.filter)
-	for i, it := range p.Items {
-		if strings.Contains(strings.ToLower(it.Label), needle) ||
-			strings.Contains(strings.ToLower(it.Detail), needle) {
-			p.visible = append(p.visible, i)
-		}
-	}
 }
 
 func (p *Picker) adjustScroll() {
