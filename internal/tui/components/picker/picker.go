@@ -6,31 +6,12 @@ package picker
 
 import (
 	"strings"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/Tyka95/kube-kit/internal/tui/theme"
 )
-
-// Animation: selection-move feedback. The newly-selected row fades from
-// bright accent (frame 0) through 4 intermediate steps back to the settled
-// SelectBG (frame 5). Each step ~30ms — total ~150ms — smooth to the eye.
-const selectFlashFrameInterval = 30 * time.Millisecond
-const selectFlashFrames = 5 // frames 1..5; frame 0 is the initial bright paint.
-
-// pickerFlashTickMsg advances the multi-frame fade animation. The token
-// guards against late-arriving ticks from a previous move.
-type pickerFlashTickMsg struct{ token int }
-
-// Continuous shimmer on the resting selected row. A 3-cell-wide brighter
-// band bounces left↔right across the row, ~7 fps. Token-guarded so the
-// shimmer stops as soon as selection moves.
-const shimmerTickInterval = 130 * time.Millisecond
-const shimmerWidth = 3
-
-type pickerShimmerTickMsg struct{ token int }
 
 // Picker is a Bubble Tea sub-model.
 //
@@ -108,116 +89,29 @@ func (p Picker) Init() tea.Cmd { return nil }
 
 // Update handles key presses + animation ticks.
 func (p Picker) Update(msg tea.Msg) (Picker, tea.Cmd) {
-	// First message ever — start the shimmer so the resting cursor has motion
-	// even before the user moves it. p.flashFrame stays at the settled value
-	// so we skip the fade animation here.
 	if !p.initialized {
 		p.initialized = true
-		p.flashFrame = selectFlashFrames // already settled
+		p.flashFrame = selectFlashFrames
 		shimmerCmd := p.startShimmer()
-		// Recurse to let the rest of the switch handle this message.
 		next, msgCmd := p.Update(msg)
-		if shimmerCmd == nil {
+		switch {
+		case shimmerCmd == nil:
 			return next, msgCmd
-		}
-		if msgCmd == nil {
+		case msgCmd == nil:
 			return next, shimmerCmd
+		default:
+			return next, tea.Batch(shimmerCmd, msgCmd)
 		}
-		return next, tea.Batch(shimmerCmd, msgCmd)
 	}
 
-	// Flash-fade tick: advance the frame counter and schedule the next tick
-	// while frames remain. When the fade settles, kick off the continuous
-	// shimmer on the resting row.
-	if tick, ok := msg.(pickerFlashTickMsg); ok {
-		if tick.token != p.flashToken {
-			return p, nil
-		}
-		if p.flashFrame < selectFlashFrames {
-			p.flashFrame++
-			if p.flashFrame < selectFlashFrames {
-				tok := p.flashToken
-				return p, tea.Tick(selectFlashFrameInterval, func(time.Time) tea.Msg {
-					return pickerFlashTickMsg{token: tok}
-				})
-			}
-			// Fade just finished → start the shimmer on this row.
-			return p, p.startShimmer()
-		}
-		return p, nil
-	}
-
-	// Continuous shimmer tick: advance position, bounce at edges, schedule
-	// the next tick. A stale token (from a prior selection) silently drops.
-	if tick, ok := msg.(pickerShimmerTickMsg); ok {
-		if tick.token != p.shimmerToken {
-			return p, nil
-		}
-		// Compute row width once based on the longest visible item.
-		maxCol := p.shimmerRangeMax()
-		if maxCol < shimmerWidth {
-			return p, nil
-		}
-		p.shimmerPos += p.shimmerDir
-		if p.shimmerPos >= maxCol {
-			p.shimmerPos = maxCol
-			p.shimmerDir = -1
-		} else if p.shimmerPos <= 0 {
-			p.shimmerPos = 0
-			p.shimmerDir = 1
-		}
-		tok := p.shimmerToken
-		return p, tea.Tick(shimmerTickInterval, func(time.Time) tea.Msg {
-			return pickerShimmerTickMsg{token: tok}
-		})
+	if np, cmd, handled := p.handleTick(msg); handled {
+		return np, cmd
 	}
 
 	if km, ok := msg.(tea.KeyMsg); ok {
 		return p.handleKey(km)
 	}
 	return p, nil
-}
-
-// flash starts a multi-frame selection fade. Frame 0 is bright accent;
-// each tick advances toward the settled SelectBG. The token guards
-// against ticks from a previous (now-stale) move. Bumping flashToken
-// also invalidates the continuous shimmer on the previous row.
-func (p *Picker) flash() tea.Cmd {
-	p.flashToken++
-	p.flashFrame = 0
-	// Invalidate any in-flight shimmer from the previous selection.
-	p.shimmerToken++
-	p.shimmerPos = 0
-	p.shimmerDir = 1
-	tok := p.flashToken
-	return tea.Tick(selectFlashFrameInterval, func(time.Time) tea.Msg {
-		return pickerFlashTickMsg{token: tok}
-	})
-}
-
-// startShimmer kicks off the continuous shimmer cycle on the now-resting
-// selected row. Called when the flash-fade settles.
-func (p *Picker) startShimmer() tea.Cmd {
-	p.shimmerToken++
-	p.shimmerPos = 0
-	p.shimmerDir = 1
-	tok := p.shimmerToken
-	return tea.Tick(shimmerTickInterval, func(time.Time) tea.Msg {
-		return pickerShimmerTickMsg{token: tok}
-	})
-}
-
-// shimmerRangeMax returns the rightmost column the shimmer head can travel
-// to — roughly the width of the longest visible label + detail + meta. The
-// 2-char lead-in is included so the shimmer can reach the right edge of the
-// row, not just the text.
-func (p Picker) shimmerRangeMax() int {
-	if p.Width == 0 {
-		return 0
-	}
-	// 80% of the visible row width — leaves a small idle margin at the
-	// edges so the band doesn't park against a border.
-	return (p.Width * 4) / 5
 }
 
 // View renders the picker body.
