@@ -10,8 +10,9 @@ import (
 	"github.com/Tyka95/kube-kit/internal/tui"
 )
 
-// Version is set at build time via -ldflags.
-var Version = "0.2.0-dev"
+// Version is set at build time via -ldflags. The string after the `=` is
+// updated automatically by release-please from .release-please-manifest.json.
+var Version = "0.2.0-dev" // x-release-please-version
 
 func main() {
 	if len(os.Args) > 1 {
