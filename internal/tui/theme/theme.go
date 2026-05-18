@@ -14,8 +14,10 @@ var (
 	Warn    lipgloss.AdaptiveColor = lipgloss.AdaptiveColor{Light: "#8f5e15", Dark: "#e0af68"}
 	Danger  lipgloss.AdaptiveColor = lipgloss.AdaptiveColor{Light: "#8c4351", Dark: "#f7768e"}
 
-	// SelectBG is the row-selection background. Subtle navy on dark, dim blue on light.
-	SelectBG lipgloss.AdaptiveColor = lipgloss.AdaptiveColor{Light: "#dde6f5", Dark: "#1e2a4e"}
+	// SelectBG is the row-selection background. Tokyo Night highlight tone —
+	// more saturated than the previous dim navy so the selection actually pops.
+	SelectBG     lipgloss.AdaptiveColor = lipgloss.AdaptiveColor{Light: "#c4d4ee", Dark: "#283457"}
+	SelectFlashBG lipgloss.AdaptiveColor = lipgloss.AdaptiveColor{Light: "#9bb4dc", Dark: "#3d4a7a"}
 )
 
 // Pre-built styles. Use Copy() in callers to derive screen-specific variants.
@@ -42,7 +44,9 @@ var (
 	ListDetail  = lipgloss.NewStyle().Foreground(Muted)
 	ListMeta    = lipgloss.NewStyle().Foreground(Muted).Italic(true)
 
-	ListSelected = lipgloss.NewStyle().Background(SelectBG)
+	ListSelected      = lipgloss.NewStyle().Background(SelectBG)
+	ListSelectedFlash = lipgloss.NewStyle().Background(SelectFlashBG)
+	ListAccentBar     = lipgloss.NewStyle().Foreground(Accent).Bold(true)
 
 	FooterHint  = lipgloss.NewStyle().Foreground(Muted)
 	FooterKey   = lipgloss.NewStyle().Foreground(Accent).Bold(true)
@@ -50,6 +54,32 @@ var (
 
 	HelpHeader = lipgloss.NewStyle().Foreground(Accent).Bold(true)
 )
+
+// InfoCallout renders a leading-icon callout suitable for transient status
+// lines like "X: not yet implemented" or "tunnel active: ...".
+//   kind: "info" | "warn" | "error" | "ok"
+func InfoCallout(kind, msg string) string {
+	var icon, color lipgloss.Style
+	switch kind {
+	case "ok":
+		icon = StatusOk
+		color = lipgloss.NewStyle().Foreground(Success)
+	case "warn":
+		icon = StatusWarn
+		color = lipgloss.NewStyle().Foreground(Warn)
+	case "error":
+		icon = StatusErr
+		color = lipgloss.NewStyle().Foreground(Danger)
+	default:
+		icon = lipgloss.NewStyle().Foreground(Accent)
+		color = Body
+	}
+	glyph := map[string]string{"ok": "✓", "warn": "▲", "error": "✗", "info": "›"}[kind]
+	if glyph == "" {
+		glyph = "›"
+	}
+	return "  " + icon.Render(glyph) + "  " + color.Render(msg)
+}
 
 // StatusGlyphs returned by Glyph() for each AWS session status code.
 func Glyph(status string) string {

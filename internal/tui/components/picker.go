@@ -2,12 +2,21 @@ package components
 
 import (
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/Tyka95/kube-kit/internal/tui/theme"
 )
+
+// Animation: selection-move feedback. The newly-selected row paints with
+// SelectFlashBG for one tick (~80ms), then settles to SelectBG.
+const selectFlashDuration = 80 * time.Millisecond
+
+// pickerFlashEndMsg is dispatched after the flash interval expires; it tells
+// the picker to drop the flash style back to the normal selection bg.
+type pickerFlashEndMsg struct{ token int }
 
 // Item is a row in the picker. Label is the value returned on selection.
 type Item struct {
@@ -48,6 +57,10 @@ type Picker struct {
 	input       string
 
 	visible []int // indexes into Items after filtering
+
+	// Flash animation state on selection change.
+	flashing   bool
+	flashToken int // monotonic token so a late-arriving tick is ignored
 }
 
 // PickerSelectedMsg fires on Enter / right-arrow.
@@ -87,8 +100,16 @@ func (p Picker) Position() (int, int) {
 // Init is required by tea.Model.
 func (p Picker) Init() tea.Cmd { return nil }
 
-// Update handles key presses.
+// Update handles key presses + animation ticks.
 func (p Picker) Update(msg tea.Msg) (Picker, tea.Cmd) {
+	// Animation end: only honor it if the token matches the latest move.
+	if end, ok := msg.(pickerFlashEndMsg); ok {
+		if end.token == p.flashToken {
+			p.flashing = false
+		}
+		return p, nil
+	}
+
 	km, ok := msg.(tea.KeyMsg)
 	if !ok {
 		return p, nil
@@ -106,7 +127,7 @@ func (p Picker) Update(msg tea.Msg) (Picker, tea.Cmd) {
 			p.cursor = len(p.visible) - 1
 		}
 		p.adjustScroll()
-		return p, nil
+		return p, p.flash()
 	case "down", "j":
 		if p.cursor < len(p.visible)-1 {
 			p.cursor++
@@ -114,7 +135,7 @@ func (p Picker) Update(msg tea.Msg) (Picker, tea.Cmd) {
 			p.cursor = 0
 		}
 		p.adjustScroll()
-		return p, nil
+		return p, p.flash()
 	case "enter", "right", "l":
 		if len(p.visible) == 0 {
 			return p, nil
@@ -178,6 +199,18 @@ func (p Picker) updateInput(km tea.KeyMsg) (Picker, tea.Cmd) {
 		p.input += string(km.Runes)
 	}
 	return p, nil
+}
+
+// flash starts a selection-change flash. Returns a Cmd that emits a
+// pickerFlashEndMsg after selectFlashDuration. The token guards against
+// late-arriving end-msgs from a previous move.
+func (p *Picker) flash() tea.Cmd {
+	p.flashing = true
+	p.flashToken++
+	tok := p.flashToken
+	return tea.Tick(selectFlashDuration, func(time.Time) tea.Msg {
+		return pickerFlashEndMsg{token: tok}
+	})
 }
 
 func (p *Picker) recomputeVisible() {
@@ -273,6 +306,8 @@ func (p Picker) View() string {
 			break
 		}
 		it := p.Items[p.visible[idx]]
+		isSel := idx == p.cursor
+
 		label := padRight(truncate(it.Label, maxLbl), maxLbl)
 		detail := padRight(truncate(it.Detail, maxDet), maxDet)
 		meta := padLeft(truncate(it.Meta, maxMeta), maxMeta)
@@ -281,17 +316,29 @@ func (p Picker) View() string {
 		detailCol := theme.ListDetail.Render(detail)
 		metaCol := theme.ListMeta.Render(meta)
 
-		row := "  " + labelCol + "   " + detailCol
+		// 2-char leading column: '▎ ' accent bar on selected row, '  ' otherwise.
+		var prefix string
+		if isSel {
+			prefix = theme.ListAccentBar.Render("▎") + " "
+		} else {
+			prefix = "  "
+		}
+
+		row := prefix + labelCol + "   " + detailCol
 		if it.Meta != "" {
 			row += "   " + metaCol
 		}
 
-		// Pad to width so the selection bg covers the full row.
+		// Pad to full width so the selection bg covers the whole row.
 		row = padRight(row, p.Width)
 		row = lipgloss.NewStyle().MaxWidth(p.Width).Render(row)
 
-		if idx == p.cursor {
-			row = theme.ListSelected.Render(row)
+		if isSel {
+			if p.flashing {
+				row = theme.ListSelectedFlash.Render(row)
+			} else {
+				row = theme.ListSelected.Render(row)
+			}
 		}
 		b.WriteString(row)
 		b.WriteString("\n")

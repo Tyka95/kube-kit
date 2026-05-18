@@ -97,7 +97,7 @@ func (s *AWSScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 func (s *AWSScreen) View(app *App) string {
 	s.picker.SetSize(app.Width, pickerBodyHeight(app.Height))
 	if s.status != "" {
-		return theme.Dim.Render(s.status) + "\n\n" + s.picker.View()
+		return theme.InfoCallout("info", s.status) + "\n\n" + s.picker.View()
 	}
 	return s.picker.View()
 }

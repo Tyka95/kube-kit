@@ -55,7 +55,7 @@ func (s *ResourcesScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 func (s *ResourcesScreen) View(app *App) string {
 	s.picker.SetSize(app.Width, pickerBodyHeight(app.Height))
 	if s.status != "" {
-		return " " + theme.StatusWarn.Render(s.status) + "\n\n" + s.picker.View()
+		return theme.InfoCallout("warn", s.status) + "\n\n" + s.picker.View()
 	}
 	return s.picker.View()
 }
