@@ -10,7 +10,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/Tyka95/kube-kit/internal/awssession"
 	"github.com/Tyka95/kube-kit/internal/tui/components/picker"
 	"github.com/Tyka95/kube-kit/internal/tui/state"
 	"github.com/Tyka95/kube-kit/internal/tui/theme"
@@ -67,38 +66,19 @@ func (s *AWSScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 	case picker.PickerSelectedMsg:
 		switch m.Value {
 		case "SSO Login":
-			// Two-step: render a pre-flight callout, hold for ~700ms so the
-			// user can see what's about to happen (chrome + profile name),
-			// then suspend bubbletea via tea.ExecProcess for the interactive
-			// aws sso login flow. The terminal hand-off is unavoidable —
-			// aws CLI needs stdin/stdout — but the pre-flight message removes
-			// the "everything disappeared" feeling.
+			// Push a dedicated SSO login screen that runs aws sso login with
+			// --no-browser, parses the device-code URL and verification code
+			// from its stdout, and renders them inside the kubekit chrome.
+			// The TUI stays visible the whole time — the user opens the URL
+			// in any browser and confirms the code there.
 			profile, err := firstAvailableProfile()
 			if err != nil {
 				s.status = "login failed: " + err.Error()
 				return s, nil
 			}
-			s.status = "Launching aws sso login for " + profile +
-				" — terminal will hand back to KubeKit when done."
-			sharedSession := app.Session
-			runLogin := func() tea.Msg {
-				loginCmd := exec.Command("aws", "sso", "login", "--profile", profile)
-				return tea.ExecProcess(loginCmd, func(execErr error) tea.Msg {
-					if execErr != nil {
-						return awsActionDoneMsg{Status: "login failed: " + execErr.Error()}
-					}
-					sharedSession.SetProfile(profile)
-					id := sharedSession.Validate(context.Background(), true)
-					if id.Status != awssession.StatusOK {
-						return awsActionDoneMsg{Status: "login finished but validate failed: " + id.Error}
-					}
-					return awsValidatedMsg{Identity: id}
-				})()
-			}
-			return s, tea.Sequence(
-				tea.Tick(700*time.Millisecond, func(time.Time) tea.Msg { return nil }),
-				runLogin,
-			)
+			s.status = ""
+			app.Push(NewSSOLoginScreen(profile, app.Session))
+			return s, nil
 		case "EKS Connect":
 			s.status = "EKS Connect: not yet implemented"
 			return s, nil
