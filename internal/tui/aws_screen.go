@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -66,10 +67,30 @@ func (s *AWSScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 	case components.PickerSelectedMsg:
 		switch m.Value {
 		case "SSO Login":
-			return s, func() tea.Msg {
-				status := pickProfileAndLogin()
-				return awsActionDoneMsg{Status: status}
+			// Pick a profile (fast) then exec the interactive sso login via
+			// tea.ExecProcess so the device-code prompt is visible — without
+			// it, bubbletea's alt-screen swallows the URL and the program
+			// hangs waiting for the browser flow.
+			profile, err := firstAvailableProfile()
+			if err != nil {
+				s.status = "login failed: " + err.Error()
+				return s, nil
 			}
+			s.status = "running aws sso login for " + profile + "…"
+			loginCmd := exec.Command("aws", "sso", "login", "--profile", profile)
+			return s, tea.ExecProcess(loginCmd, func(execErr error) tea.Msg {
+				if execErr != nil {
+					return awsActionDoneMsg{Status: "login failed: " + execErr.Error()}
+				}
+				// Validate the resulting session so the header updates.
+				sess := awssession.New()
+				sess.SetProfile(profile)
+				id := sess.Validate(context.Background(), true)
+				if id.Status != awssession.StatusOK {
+					return awsActionDoneMsg{Status: "login finished but validate failed: " + id.Error}
+				}
+				return awsActionDoneMsg{Status: "logged in as " + profile + " (account " + id.Account + ")"}
+			})
 		case "EKS Connect":
 			s.status = "EKS Connect: not yet implemented"
 			return s, nil
@@ -102,48 +123,26 @@ func (s *AWSScreen) View(app *App) string {
 	return s.picker.View()
 }
 
-// pickProfileAndLogin picks the first available AWS profile and runs sso login.
+// firstAvailableProfile returns the first profile from `aws configure list-profiles`.
 //
-// TODO: replace profile selection with an inline profile-picker dialog.
-func pickProfileAndLogin() string {
-	ctx := context.Background()
+// TODO: replace with an inline profile-picker dialog (v1.1).
+func firstAvailableProfile() (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
 
-	// List profiles via aws configure list-profiles.
 	var stdout, stderr bytes.Buffer
 	cmd := exec.CommandContext(ctx, "aws", "configure", "list-profiles")
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		return fmt.Sprintf("login failed: could not list profiles: %v", err)
+		return "", fmt.Errorf("could not list profiles: %v", err)
 	}
 
 	lines := strings.Split(strings.TrimSpace(stdout.String()), "\n")
-	var profiles []string
 	for _, l := range lines {
-		l = strings.TrimSpace(l)
-		if l != "" {
-			profiles = append(profiles, l)
+		if l = strings.TrimSpace(l); l != "" {
+			return l, nil
 		}
 	}
-	if len(profiles) == 0 {
-		return "login failed: no AWS profiles found in ~/.aws/config"
-	}
-
-	// Use the single profile or fall back to the first one.
-	picked := profiles[0]
-
-	sess := awssession.New()
-	sess.SetProfile(picked)
-
-	id, err := sess.Login(ctx)
-	if err != nil {
-		return fmt.Sprintf("login failed: %v", err)
-	}
-	if id.Status != awssession.StatusOK {
-		if id.Error != "" {
-			return fmt.Sprintf("login failed: %s", id.Error)
-		}
-		return fmt.Sprintf("login failed: status %s", id.Status)
-	}
-	return fmt.Sprintf("logged in as %s (account %s)", picked, id.Account)
+	return "", fmt.Errorf("no profiles found in ~/.aws/config")
 }

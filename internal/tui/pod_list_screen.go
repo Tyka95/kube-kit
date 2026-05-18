@@ -30,6 +30,7 @@ type podsLoadedMsg struct {
 type PodListScreen struct {
 	namespace string
 	picker    components.Picker
+	spinner   components.Spinner
 	loading   bool
 	err       error
 	status    string
@@ -43,13 +44,14 @@ func NewPodListScreen(namespace string) *PodListScreen {
 	return &PodListScreen{
 		namespace: namespace,
 		picker:    components.New("Pod List", nil, binds),
+		spinner:   components.NewSpinner(),
 		loading:   true,
 	}
 }
 
-// Init fires the async kubectl call.
+// Init fires the async kubectl call and starts the loading spinner.
 func (s *PodListScreen) Init() tea.Cmd {
-	return s.loadPods()
+	return tea.Batch(s.loadPods(), s.spinner.Start())
 }
 
 // loadPods returns a Cmd that shells out to kubectl and dispatches podsLoadedMsg.
@@ -115,6 +117,7 @@ func (s *PodListScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 
 	case podsLoadedMsg:
 		s.loading = false
+		s.spinner.Stop()
 		s.err = m.err
 		if m.err != nil {
 			return s, nil
@@ -142,12 +145,18 @@ func (s *PodListScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 			s.loading = true
 			s.err = nil
 			s.status = ""
-			return s, s.loadPods()
+			return s, tea.Batch(s.loadPods(), s.spinner.Start())
 		}
 		return s, nil
 
 	case components.PickerCancelMsg:
+		s.spinner.Stop()
 		return nil, nil
+	}
+
+	// Spinner tick — keeps the loading animation alive.
+	if cmd, handled := s.spinner.Update(msg); handled {
+		return s, cmd
 	}
 
 	var cmd tea.Cmd
@@ -158,10 +167,10 @@ func (s *PodListScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 // View renders the pod list screen body.
 func (s *PodListScreen) View(app *App) string {
 	if s.loading {
-		return theme.Dim.Render("loading pods…")
+		return "  " + s.spinner.View() + "  " + theme.Dim.Render("loading pods…")
 	}
 	if s.err != nil {
-		return theme.StatusErr.Render("kubectl error: " + s.err.Error())
+		return theme.InfoCallout("error", "kubectl error: "+s.err.Error())
 	}
 	s.picker.SetSize(app.Width, pickerBodyHeight(app.Height))
 	if s.status != "" {
