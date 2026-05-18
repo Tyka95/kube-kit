@@ -144,6 +144,30 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case QuitMsg:
 		return a, tea.Quit
+	case components.PickerHelpMsg:
+		// Any screen's '?' lands here. Push the help overlay seeded with the
+		// current screen's KeyHints so it can show them.
+		a.Push(NewHelpScreen(a.KeyHints))
+		return a, nil
+	case components.PickerCommandMsg:
+		// Any screen's ':' lands here. Dispatch the command; on quit-sentinel
+		// exit, on help-sentinel push help, otherwise just absorb (caller's
+		// state is already updated by the handler).
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		res, err := a.Commands.Run(ctx, m.Value)
+		if err == nil {
+			switch res.Sentinel {
+			case "quit":
+				return a, tea.Quit
+			case "help":
+				a.Push(NewHelpScreen(a.KeyHints))
+				return a, nil
+			}
+		}
+		// If the command touched kube context / namespace / aws profile,
+		// re-load state so the header reflects reality immediately.
+		return a, tea.Batch(a.loadKubeContext(), a.validateAWSSession(true))
 	case ctxLoadedMsg:
 		if m.Err == nil {
 			a.KubeContext = m.Cluster
