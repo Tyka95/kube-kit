@@ -56,6 +56,9 @@ func New() *Discoverer {
 // If either aws command fails, the error is returned and the cache timestamp is NOT updated
 // so the next call will retry immediately.
 func (d *Discoverer) Discover(ctx context.Context, profile, region, account string) ([]Endpoint, error) {
+	if region == "" {
+		return nil, fmt.Errorf("aws region unset; configure a kubectl EKS context, $AWS_REGION, or aws_regions= in ~/.config/kubekit/config")
+	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
 

@@ -33,6 +33,10 @@ const ttl = 60 * time.Second
 // eksARNRe matches an EKS cluster ARN and captures region and account id.
 var eksARNRe = regexp.MustCompile(`arn:aws:eks:([a-z0-9-]+):([0-9]{12}):`)
 
+// eksServerRe matches an EKS cluster API server URL of the form
+// https://<id>.<x>.<region>.eks.amazonaws.com (or variant). Captures region.
+var eksServerRe = regexp.MustCompile(`https://[^.]+\.[^.]+\.([a-z0-9-]+)\.eks\.amazonaws\.com`)
+
 // Sentinel errors.
 var (
 	ErrSessionExpired = errors.New("aws session expired")
@@ -98,6 +102,11 @@ func (s *Session) Resolve(ctx context.Context) Identity {
 // Validate runs `aws sts get-caller-identity` and updates the cached Identity.
 // 60s TTL: if the last successful check was within 60s, returns the cached
 // value unless force=true.
+//
+// Region and CtxAccount are re-resolved from the environment on each force
+// call so a kubectl context switch in another terminal becomes visible.
+// Profile is only resolved when it's currently empty — callers who explicitly
+// SetProfile() (e.g. after SSO login) keep their override.
 func (s *Session) Validate(ctx context.Context, force bool) Identity {
 	s.mu.Lock()
 	id := s.identity
@@ -105,6 +114,18 @@ func (s *Session) Validate(ctx context.Context, force bool) Identity {
 
 	if !force && id.Status == StatusOK && time.Since(id.CheckedAt) < ttl {
 		return id
+	}
+
+	// Refresh region/ctxAccount; refresh profile only if currently unset.
+	if force {
+		region, ctxAccount := resolveRegionAndAccount(ctx)
+		s.mu.Lock()
+		s.identity.Region = region
+		s.identity.CtxAccount = ctxAccount
+		if s.identity.Profile == "" {
+			s.identity.Profile = resolveProfile(ctx)
+		}
+		s.mu.Unlock()
 	}
 
 	// Check aws CLI is available.
@@ -273,21 +294,33 @@ func kubeconfigExecEnvProfile(ctx context.Context) string {
 	return strings.TrimSpace(string(out))
 }
 
-// resolveRegionAndAccount derives region and context account from the current
-// kubectl context (if it is an EKS ARN), falling back to $AWS_REGION and
-// $AWS_DEFAULT_REGION.
+// resolveRegionAndAccount derives region and context account from:
+//  1. the current kubectl context name (when it's an EKS ARN),
+//  2. the cluster's API server URL in the kubeconfig (when the context is
+//     a short alias like "staging-eks" but the cluster URL still ends in
+//     <region>.eks.amazonaws.com),
+//  3. $AWS_REGION / $AWS_DEFAULT_REGION as a last resort.
+//
+// CtxAccount can only be recovered from path (1) — the server URL doesn't
+// encode the AWS account id.
 func resolveRegionAndAccount(ctx context.Context) (region, ctxAccount string) {
-	cmd := exec.CommandContext(ctx, "kubectl", "config", "current-context")
-	out, err := cmd.Output()
-	if err == nil {
+	// (1) current-context as ARN.
+	if out, err := exec.CommandContext(ctx, "kubectl", "config", "current-context").Output(); err == nil {
 		ctxName := strings.TrimSpace(string(out))
 		if m := eksARNRe.FindStringSubmatch(ctxName); m != nil {
-			region = m[1]
-			ctxAccount = m[2]
-			return region, ctxAccount
+			return m[1], m[2]
 		}
 	}
 
+	// (2) cluster server URL from minified kubeconfig.
+	if out, err := exec.CommandContext(ctx, "kubectl", "config", "view", "--minify",
+		"-o", "jsonpath={.clusters[0].cluster.server}").Output(); err == nil {
+		if m := eksServerRe.FindStringSubmatch(string(out)); m != nil {
+			return m[1], ""
+		}
+	}
+
+	// (3) env fallbacks.
 	if r := os.Getenv("AWS_REGION"); r != "" {
 		return r, ""
 	}
