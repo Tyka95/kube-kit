@@ -68,11 +68,18 @@ type ssoPollMsg struct{}
 type ssoCompletedMsg struct{ err error }
 type ssoValidatedMsg struct{ id awssession.Identity }
 
-// AWS prints the device URL as a normal https link and the code on its own
-// line. The two regexes accept the common formats.
+// AWS CLI prints two URLs with --no-browser: a bare verification URL
+// (e.g. https://device.sso.us-east-1.amazonaws.com/) AND a
+// verification_uri_complete that embeds ?user_code=XXXX-XXXX. We prefer
+// the complete URL because the AWS page then pre-fills the code — the
+// user just clicks Confirm, no paste step, no race with code expiry.
+//
+// The code regex matches the standalone "XXXX-XXXX" line AWS prints
+// separately. It's anchored to line boundaries so it can't accidentally
+// pick up a fragment embedded inside a URL or another token.
 var (
-	ssoURLRe  = regexp.MustCompile(`https?://[a-zA-Z0-9.\-_/]+/start/#?/device[^\s]*`)
-	ssoCodeRe = regexp.MustCompile(`\b[A-Z0-9]{4}-[A-Z0-9]{4}\b`)
+	ssoURLAnyRe   = regexp.MustCompile(`https?://[^\s'"<>]+`)
+	ssoCodeLineRe = regexp.MustCompile(`(?m)^\s*([A-Z0-9]{4}-[A-Z0-9]{4})\s*$`)
 )
 
 const ssoPollInterval = 250 * time.Millisecond
@@ -213,19 +220,34 @@ func (s *SSOLoginScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 
 // scanOutput re-reads the captured stdout and fills in url/code if regex
 // matches are found. Cheap to call repeatedly — the buffer grows append-only.
+//
+// URL selection: AWS prints two URLs — a bare verification URL and a
+// verification_uri_complete with ?user_code= embedded. We always prefer
+// the complete one (page pre-fills the code → user only clicks Confirm).
 func (s *SSOLoginScreen) scanOutput() {
 	if s.url != "" && s.code != "" {
 		return
 	}
 	out := s.output.String()
 	if s.url == "" {
-		if u := ssoURLRe.FindString(out); u != "" {
-			s.url = u
+		urls := ssoURLAnyRe.FindAllString(out, -1)
+		var bare string
+		for _, u := range urls {
+			if strings.Contains(u, "user_code=") {
+				s.url = u
+				break
+			}
+			if bare == "" {
+				bare = u
+			}
+		}
+		if s.url == "" {
+			s.url = bare
 		}
 	}
 	if s.code == "" {
-		if c := ssoCodeRe.FindString(out); c != "" {
-			s.code = c
+		if m := ssoCodeLineRe.FindStringSubmatch(out); len(m) > 1 {
+			s.code = m[1]
 		}
 	}
 }
