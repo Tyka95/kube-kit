@@ -6,6 +6,10 @@ package tui
 import (
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/Tyka95/kube-kit/internal/awssession"
+	"github.com/Tyka95/kube-kit/internal/commands"
+	"github.com/Tyka95/kube-kit/internal/config"
+	"github.com/Tyka95/kube-kit/internal/rds"
 	"github.com/Tyka95/kube-kit/internal/tui/components"
 	"github.com/Tyka95/kube-kit/internal/tui/state"
 )
@@ -25,14 +29,28 @@ type Screen interface {
 type App struct {
 	state.AppState
 	screenStack []Screen
+
+	// Shared singletons accessed by screens via App helpers.
+	Config    *config.Config
+	Session   *awssession.Session
+	Discover  *rds.Discoverer
+	Commands  *commands.Registry
 }
 
 // NewApp constructs the app at the main menu.
 func NewApp() *App {
+	cfg, _ := config.Load() // empty config on error; the TUI is still usable
+	if cfg == nil {
+		cfg = &config.Config{}
+	}
 	a := &App{
 		AppState: state.AppState{
 			AWSStatus: state.AWSUnknown,
 		},
+		Config:   cfg,
+		Session:  awssession.New(),
+		Discover: rds.New(),
+		Commands: commands.Builtins(),
 	}
 	a.Push(NewMainMenu())
 	return a
