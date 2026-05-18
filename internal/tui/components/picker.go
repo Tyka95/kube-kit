@@ -424,24 +424,22 @@ func (p Picker) View() string {
 		var row string
 		if isSel {
 			// Selected row layout:
-			//   ❯ <label>   <detail>   <meta>
-			// The ❯ is rendered in the accent fg without the row's bg so it
-			// reads as a separate "pointer" rather than blending in. The
-			// remaining ' <label>...<meta>' plain string gets the selection
-			// bg + optional shimmer band overlay.
-			const markerCols = 2 // visible width of "❯ "
+			//   █ <label>   <detail>   <meta>
+			// The leading '█' is a full-block in accent fg painted on the
+			// selection bg, so it reads as a bright vertical stripe at the
+			// left edge of an unmistakably highlighted row. No floating
+			// glyphs — the bar IS part of the bg block, so it can't render
+			// disconnected if the user's font drops a rare codepoint.
 			plain := " " + label + "   " + detail
 			if it.Meta != "" {
 				plain += "   " + meta
 			}
-			// Pad the bg-painted portion to (Width - markerCols) so the bg
-			// reaches the right edge of the terminal.
-			plain = padRight(plain, p.Width-markerCols)
+			// Pad to (Width - 1) to leave room for the leading stripe column.
+			plain = padRight(plain, p.Width-1)
 
 			baseBG := theme.SelectionBGAt(p.flashFrame, selectFlashFrames)
-			marker := theme.SelectionMarker.Render("❯") + " "
-
 			rendered := baseBG.Render(plain)
+
 			if p.flashFrame >= selectFlashFrames {
 				// Overlay the shimmer band only after the flash settles.
 				width := len(plain)
@@ -463,7 +461,12 @@ func (p Picker) View() string {
 						baseBG.Render(plain[end:])
 				}
 			}
-			row = marker + rendered
+
+			// Leading stripe — accent fg on the same selection bg so it
+			// joins the row block visually. '█' is U+2588, in any
+			// Unicode-capable font.
+			stripe := theme.LeftStripe.Render("█")
+			row = stripe + rendered
 		} else {
 			// Unselected row: 2-space lead-in matching the marker width so
 			// the columns line up between selected and unselected rows.

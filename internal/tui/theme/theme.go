@@ -18,8 +18,11 @@ var (
 	Warn    lipgloss.AdaptiveColor = lipgloss.AdaptiveColor{Light: "#8f5e15", Dark: "#e0af68"}
 	Danger  lipgloss.AdaptiveColor = lipgloss.AdaptiveColor{Light: "#8c4351", Dark: "#f7768e"}
 
-	// SelectBG is the row-selection background.
-	SelectBG     lipgloss.AdaptiveColor = lipgloss.AdaptiveColor{Light: "#c4d4ee", Dark: "#283457"}
+	// SelectBG is the row-selection background. Bumped from #283457 (Tokyo
+	// Night highlight) to #3b4261 (the Tokyo Night statusline color) so the
+	// entire selected row actually reads as highlighted on dark terminals
+	// — not just the shimmer band as before.
+	SelectBG     lipgloss.AdaptiveColor = lipgloss.AdaptiveColor{Light: "#b0c2e0", Dark: "#3b4261"}
 	// SelectFlashBG is the brief on-move tint — significantly brighter than
 	// SelectBG so the eye registers the change in 150ms.
 	SelectFlashBG lipgloss.AdaptiveColor = lipgloss.AdaptiveColor{Light: "#7aa2f7", Dark: "#7aa2f7"}
@@ -61,9 +64,10 @@ var (
 
 	HelpHeader = lipgloss.NewStyle().Foreground(Accent).Bold(true)
 
-	// SelectionMarker is the '❯' caret rendered to the left of the selected
-	// row. Accent fg, bold, no background — appears as a floating pointer.
-	SelectionMarker = lipgloss.NewStyle().Foreground(Accent).Bold(true)
+	// LeftStripe is the bright vertical stripe rendered on the very left
+	// edge of the selected row. Accent fg ON the selection bg so it reads
+	// as a solid bright bar continuing through the row's highlight block.
+	LeftStripe = lipgloss.NewStyle().Foreground(Accent).Background(SelectBG).Bold(true)
 )
 
 // SelectionBGAt returns the row-selection background color at a given fade
