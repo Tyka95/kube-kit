@@ -1,6 +1,8 @@
 // Package theme defines the kubekit color palette and shared lipgloss styles.
-// Six semantic tokens map onto Tokyo Night hex values; lipgloss handles the
-// 256-color and ANSI-16 fallbacks automatically.
+// Six semantic tokens map onto the Nord palette (https://www.nordtheme.com/) —
+// desaturated, calm tones designed for long-session work next to logs and
+// kubectl output. Lipgloss handles 256-color and ANSI-16 fallbacks
+// automatically; AdaptiveColor pairs light/dark variants.
 package theme
 
 import (
@@ -9,23 +11,26 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Color tokens.
+// Color tokens — Nord palette.
+//
+// Dark variants are the Nord defaults (snow-storm + frost + aurora). Light
+// variants invert primary/muted and use the slightly darker Frost tones so
+// the AdaptiveColor pair stays readable on bright terminal themes.
 var (
-	Primary lipgloss.AdaptiveColor = lipgloss.AdaptiveColor{Light: "#1f2335", Dark: "#e0e0e0"}
-	Accent  lipgloss.AdaptiveColor = lipgloss.AdaptiveColor{Light: "#3d59a1", Dark: "#7aa2f7"}
-	Muted   lipgloss.AdaptiveColor = lipgloss.AdaptiveColor{Light: "#6e7388", Dark: "#565f89"}
-	Success lipgloss.AdaptiveColor = lipgloss.AdaptiveColor{Light: "#587539", Dark: "#9ece6a"}
-	Warn    lipgloss.AdaptiveColor = lipgloss.AdaptiveColor{Light: "#8f5e15", Dark: "#e0af68"}
-	Danger  lipgloss.AdaptiveColor = lipgloss.AdaptiveColor{Light: "#8c4351", Dark: "#f7768e"}
+	Primary lipgloss.AdaptiveColor = lipgloss.AdaptiveColor{Light: "#2e3440", Dark: "#d8dee9"} // nord4 / nord0
+	Accent  lipgloss.AdaptiveColor = lipgloss.AdaptiveColor{Light: "#5e81ac", Dark: "#88c0d0"} // nord10 / nord8 (frost)
+	Muted   lipgloss.AdaptiveColor = lipgloss.AdaptiveColor{Light: "#4c566a", Dark: "#4c566a"} // nord3
+	Success lipgloss.AdaptiveColor = lipgloss.AdaptiveColor{Light: "#a3be8c", Dark: "#a3be8c"} // nord14 (aurora green)
+	Warn    lipgloss.AdaptiveColor = lipgloss.AdaptiveColor{Light: "#d08770", Dark: "#ebcb8b"} // nord12 / nord13
+	Danger  lipgloss.AdaptiveColor = lipgloss.AdaptiveColor{Light: "#bf616a", Dark: "#bf616a"} // nord11
 
-	// SelectBG is the row-selection background. Bumped from #283457 (Tokyo
-	// Night highlight) to #3b4261 (the Tokyo Night statusline color) so the
-	// entire selected row actually reads as highlighted on dark terminals
-	// — not just the shimmer band as before.
-	SelectBG     lipgloss.AdaptiveColor = lipgloss.AdaptiveColor{Light: "#b0c2e0", Dark: "#3b4261"}
-	// SelectFlashBG is the brief on-move tint — significantly brighter than
-	// SelectBG so the eye registers the change in 150ms.
-	SelectFlashBG lipgloss.AdaptiveColor = lipgloss.AdaptiveColor{Light: "#7aa2f7", Dark: "#7aa2f7"}
+	// SelectBG is the row-selection background. Nord polar-night #3b4252 —
+	// quiet enough not to fight kubectl output, distinct enough to read as
+	// "highlighted" on a #2e3440 terminal background.
+	SelectBG lipgloss.AdaptiveColor = lipgloss.AdaptiveColor{Light: "#e5e9f0", Dark: "#3b4252"} // nord1
+	// SelectFlashBG is the brief on-move tint — Nord frost (#5e81ac) so the
+	// 150ms flash on move is cool-blue, not a saturated pop.
+	SelectFlashBG lipgloss.AdaptiveColor = lipgloss.AdaptiveColor{Light: "#81a1c1", Dark: "#5e81ac"} // nord9 / nord10
 )
 
 // Pre-built styles. Use Copy() in callers to derive screen-specific variants.
@@ -82,7 +87,8 @@ func SelectionBGAt(frame, total int) lipgloss.Style {
 		return lipgloss.NewStyle().Background(SelectBG)
 	}
 	// Interpolate on dark-theme hexes (kubekit is dark-first).
-	r := lerpHex("#7aa2f7", "#283457", float64(frame)/float64(total))
+	// Nord: frost #5e81ac (flash) → polar-night #3b4252 (settled).
+	r := lerpHex("#5e81ac", "#3b4252", float64(frame)/float64(total))
 	return lipgloss.NewStyle().Background(lipgloss.Color(r))
 }
 
