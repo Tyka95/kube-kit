@@ -2,3 +2,12 @@
 *.bak
 .claude/
 .idea/
+
+# Go build artifacts
+bin/
+*.test
+*.out
+coverage.txt
+
+# Editor
+*.swp
