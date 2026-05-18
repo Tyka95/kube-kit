@@ -75,48 +75,43 @@ func (p Picker) View() string {
 		if isSel {
 			// Selected row layout:
 			//   █ <label>   <detail>   <meta>
-			// The leading '█' is a full-block in accent fg painted on the
-			// selection bg, so it reads as a bright vertical stripe at the
-			// left edge of an unmistakably highlighted row. No floating
-			// glyphs — the bar IS part of the bg block, so it can't render
-			// disconnected if the user's font drops a rare codepoint.
+			// Rendered rune-by-rune so multi-byte UTF-8 characters (like '·')
+			// never get sliced in half. The shimmer is foreground-only:
+			// per-cell brightness derived from distance to shimmerPos.
 			plain := " " + label + "   " + detail
 			if it.Meta != "" {
 				plain += "   " + meta
 			}
-			// Pad to (Width - 1) to leave room for the leading stripe column.
-			plain = padRight(plain, p.Width-1)
+			plain = padRight(plain, p.Width-1) // -1 leaves room for left stripe
 
 			baseBG := theme.SelectionBGAt(p.flashFrame, selectFlashFrames)
-			rendered := baseBG.Render(plain)
+			labelEnd := 1 + lipglossWidth(label) // first col after the leading space + label
 
-			if p.flashFrame >= selectFlashFrames {
-				// Overlay the shimmer band only after the flash settles.
-				width := len(plain)
-				start := p.shimmerPos - shimmerWidth/2
-				if start < 0 {
-					start = 0
+			runes := []rune(plain)
+			var rb strings.Builder
+			for col, r := range runes {
+				// Base fg: bold primary in the label zone, muted elsewhere.
+				var base lipgloss.Style
+				if col <= labelEnd {
+					base = theme.ListLabel
+				} else {
+					base = theme.ListDetail
 				}
-				end := start + shimmerWidth
-				if end > width {
-					end = width
+				// Apply shimmer glow only after the flash fade has settled.
+				var fg lipgloss.Style
+				if p.flashFrame >= selectFlashFrames {
+					fg = theme.ShimmerGlowAt(col-p.shimmerPos, base)
+				} else {
+					fg = base
 				}
-				if end > start {
-					bandStyle := lipgloss.NewStyle().
-						Background(theme.SelectFlashBG).
-						Foreground(theme.Primary).
-						Bold(true)
-					rendered = baseBG.Render(plain[:start]) +
-						bandStyle.Render(plain[start:end]) +
-						baseBG.Render(plain[end:])
-				}
+				// Compose: fg style + bg style. Inherit puts fg on top of bg
+				// so we never lose the selection background.
+				cell := fg.Inherit(baseBG).Render(string(r))
+				rb.WriteString(cell)
 			}
 
-			// Leading stripe — accent fg on the same selection bg so it
-			// joins the row block visually. '█' is U+2588, in any
-			// Unicode-capable font.
 			stripe := theme.LeftStripe.Render("█")
-			row = stripe + rendered
+			row = stripe + rb.String()
 		} else {
 			// Unselected row: 2-space lead-in matching the marker width so
 			// the columns line up between selected and unselected rows.
