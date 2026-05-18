@@ -5,6 +5,7 @@ import (
 	"context"
 	"os/exec"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -31,8 +32,9 @@ type SSOLoginScreen struct {
 	cmd    *exec.Cmd
 	output *syncBuffer
 
-	url  string
-	code string
+	url            string
+	code           string
+	browserOpened  bool // guard so we only fire `open <url>` once
 
 	completed bool
 	finalKind string // "ok" | "warn" | "error" — drives the callout color
@@ -136,10 +138,20 @@ func (s *SSOLoginScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 
 	case ssoPollMsg:
 		s.scanOutput()
-		if s.completed {
-			return s, nil
+		// Auto-open the URL in the user's default browser exactly once.
+		// --no-browser suppresses aws CLI's own attempt; we make the call.
+		var openCmd tea.Cmd
+		if s.url != "" && !s.browserOpened {
+			s.browserOpened = true
+			openCmd = openBrowserCmd(s.url)
 		}
-		return s, s.tickPoll()
+		if s.completed {
+			return s, openCmd
+		}
+		if openCmd == nil {
+			return s, s.tickPoll()
+		}
+		return s, tea.Batch(openCmd, s.tickPoll())
 
 	case ssoCompletedMsg:
 		s.completed = true
@@ -255,3 +267,23 @@ func (s *SSOLoginScreen) View(app *App) string {
 	b.WriteString("  " + s.spinner.View() + "  " + theme.Dim.Render("waiting for browser confirmation…"))
 	return b.String()
 }
+
+// openBrowserCmd returns a tea.Cmd that asks the OS to open url in the
+// user's default browser. Best-effort: any failure is silently ignored
+// since the URL is still visible on screen for the user to copy manually.
+func openBrowserCmd(url string) tea.Cmd {
+	return func() tea.Msg {
+		var cmd *exec.Cmd
+		switch runtime.GOOS {
+		case "darwin":
+			cmd = exec.Command("open", url)
+		case "windows":
+			cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+		default:
+			cmd = exec.Command("xdg-open", url)
+		}
+		_ = cmd.Start()
+		return nil
+	}
+}
+
