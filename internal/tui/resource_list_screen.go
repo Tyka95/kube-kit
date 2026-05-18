@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Tyka95/kube-kit/internal/tui/components"
+	"github.com/Tyka95/kube-kit/internal/tui/components/picker"
 	"github.com/Tyka95/kube-kit/internal/tui/state"
 	"github.com/Tyka95/kube-kit/internal/tui/theme"
 )
@@ -53,7 +54,7 @@ type resourceActionStatusMsg struct {
 // resource type.
 type ResourceListScreen struct {
 	action  ResourceAction
-	picker  components.Picker
+	picker  picker.Picker
 	spinner components.Spinner
 	loading bool
 	err     error
@@ -62,14 +63,14 @@ type ResourceListScreen struct {
 
 // NewResourceListScreen constructs a ResourceListScreen in the loading state.
 func NewResourceListScreen(action ResourceAction) *ResourceListScreen {
-	binds := []components.Bind{{Key: "r", Action: "refresh"}}
+	binds := []picker.Bind{{Key: "r", Action: "refresh"}}
 	name := action.Name
 	if name == "" {
 		name = string(action.Kind)
 	}
 	return &ResourceListScreen{
 		action:  action,
-		picker:  components.New(name, nil, binds),
+		picker:  picker.New(name, nil, binds),
 		spinner: components.NewSpinner(),
 		loading: true,
 	}
@@ -241,9 +242,9 @@ func (s *ResourceListScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 		if m.err != nil {
 			return s, nil
 		}
-		items := make([]components.Item, 0, len(m.rows))
+		items := make([]picker.Item, 0, len(m.rows))
 		for _, row := range m.rows {
-			items = append(items, components.Item{
+			items = append(items, picker.Item{
 				Label:  row.label,
 				Detail: row.detail,
 				Meta:   row.meta,
@@ -253,17 +254,17 @@ func (s *ResourceListScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 		if name == "" {
 			name = string(s.action.Kind)
 		}
-		binds := []components.Bind{{Key: "r", Action: "refresh"}}
-		s.picker = components.New(name, items, binds)
+		binds := []picker.Bind{{Key: "r", Action: "refresh"}}
+		s.picker = picker.New(name, items, binds)
 		return s, nil
 
-	case components.PickerSelectedMsg:
+	case picker.PickerSelectedMsg:
 		if s.action.OnSelected != nil {
 			return s, s.action.OnSelected(m.Value)
 		}
 		return s, defaultDescribe(s.action.Kind, s.action.Namespace, m.Value)
 
-	case components.PickerActionMsg:
+	case picker.PickerActionMsg:
 		if m.Action == "refresh" {
 			s.loading = true
 			s.err = nil
@@ -272,7 +273,7 @@ func (s *ResourceListScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 		}
 		return s, nil
 
-	case components.PickerCancelMsg:
+	case picker.PickerCancelMsg:
 		s.spinner.Stop()
 		return nil, nil
 

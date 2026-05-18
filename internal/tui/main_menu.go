@@ -4,17 +4,18 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Tyka95/kube-kit/internal/tui/components"
+	"github.com/Tyka95/kube-kit/internal/tui/components/picker"
 	"github.com/Tyka95/kube-kit/internal/tui/state"
 )
 
 // MainMenu is the root screen.
 type MainMenu struct {
-	picker components.Picker
+	picker picker.Picker
 }
 
 // NewMainMenu constructs the main menu.
 func NewMainMenu() *MainMenu {
-	items := []components.Item{
+	items := []picker.Item{
 		{Label: "Pods", Detail: "list · logs · shell · inspect"},
 		{Label: "Deployments", Detail: "browse · scale · restart"},
 		{Label: "Resources", Detail: "namespaces · services · ingress"},
@@ -23,7 +24,7 @@ func NewMainMenu() *MainMenu {
 		{Label: "AWS", Detail: "sso · eks · s3"},
 		{Label: "Exit", Detail: ""},
 	}
-	return &MainMenu{picker: components.New("Main Menu", items, nil)}
+	return &MainMenu{picker: picker.New("Main Menu", items, nil)}
 }
 
 func (m *MainMenu) Init() tea.Cmd                  { return nil }
@@ -38,7 +39,7 @@ func (m *MainMenu) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 	}
 
 	switch v := msg.(type) {
-	case components.PickerSelectedMsg:
+	case picker.PickerSelectedMsg:
 		switch v.Value {
 		case "Exit":
 			return m, func() tea.Msg { return QuitMsg{} }
@@ -56,10 +57,10 @@ func (m *MainMenu) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 			app.Push(NewAWSScreen())
 		}
 		return m, nil
-	case components.PickerCancelMsg:
+	case picker.PickerCancelMsg:
 		// Esc/q at root menu is a no-op (k9s convention).
 		return m, nil
-	case components.PickerHelpMsg:
+	case picker.PickerHelpMsg:
 		app.Push(NewHelpScreen(m.KeyHints()))
 		return m, nil
 	}

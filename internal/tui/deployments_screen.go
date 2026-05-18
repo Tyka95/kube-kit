@@ -7,25 +7,25 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/Tyka95/kube-kit/internal/tui/components"
+	"github.com/Tyka95/kube-kit/internal/tui/components/picker"
 	"github.com/Tyka95/kube-kit/internal/tui/state"
 	"github.com/Tyka95/kube-kit/internal/tui/theme"
 )
 
 // DeploymentsScreen shows deployment-related actions.
 type DeploymentsScreen struct {
-	picker components.Picker
+	picker picker.Picker
 	status string
 }
 
 // NewDeploymentsScreen constructs the Deployments action menu.
 func NewDeploymentsScreen() *DeploymentsScreen {
-	items := []components.Item{
+	items := []picker.Item{
 		{Label: "Browse", Detail: "list deployments in namespace"},
 		{Label: "Scale", Detail: "set replica count"},
 		{Label: "Restart", Detail: "rollout restart"},
 	}
-	return &DeploymentsScreen{picker: components.New("Deployments", items, nil)}
+	return &DeploymentsScreen{picker: picker.New("Deployments", items, nil)}
 }
 
 func (s *DeploymentsScreen) Init() tea.Cmd             { return nil }
@@ -43,7 +43,7 @@ func (s *DeploymentsScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 	}
 
 	switch v := msg.(type) {
-	case components.PickerSelectedMsg:
+	case picker.PickerSelectedMsg:
 		switch v.Value {
 		case "Browse":
 			ns := app.KubeNamespace
@@ -105,7 +105,7 @@ func (s *DeploymentsScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 		}
 		return s, nil
 
-	case components.PickerCancelMsg:
+	case picker.PickerCancelMsg:
 		return nil, nil
 	}
 

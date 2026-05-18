@@ -7,7 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Tyka95/kube-kit/internal/kctx"
-	"github.com/Tyka95/kube-kit/internal/tui/components"
+	"github.com/Tyka95/kube-kit/internal/tui/components/picker"
 	"github.com/Tyka95/kube-kit/internal/tui/state"
 	"github.com/Tyka95/kube-kit/internal/tui/theme"
 )
@@ -20,8 +20,8 @@ type contextsLoadedMsg struct {
 
 // ClusterScreen lists kubectl contexts and lets the user switch between them.
 type ClusterScreen struct {
-	picker  components.Picker
-	items   []components.Item // mirror of picker items
+	picker  picker.Picker
+	items   []picker.Item // mirror of picker items
 	full    []string          // full context names parallel to items
 	loading bool
 	err     string
@@ -30,7 +30,7 @@ type ClusterScreen struct {
 // NewClusterScreen constructs an empty ClusterScreen in the loading state.
 func NewClusterScreen() *ClusterScreen {
 	return &ClusterScreen{
-		picker:  components.New("Cluster", nil, nil),
+		picker:  picker.New("Cluster", nil, nil),
 		loading: true,
 	}
 }
@@ -67,7 +67,7 @@ func (s *ClusterScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 			return s, nil
 		}
 
-		s.items = make([]components.Item, 0, len(m.contexts))
+		s.items = make([]picker.Item, 0, len(m.contexts))
 		s.full = make([]string, 0, len(m.contexts))
 
 		for _, c := range m.contexts {
@@ -83,7 +83,7 @@ func (s *ClusterScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 				meta = "current"
 			}
 
-			s.items = append(s.items, components.Item{
+			s.items = append(s.items, picker.Item{
 				Label:  c.Cluster,
 				Detail: detail,
 				Meta:   meta,
@@ -91,10 +91,10 @@ func (s *ClusterScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 			s.full = append(s.full, c.Name)
 		}
 
-		s.picker = components.New("Cluster", s.items, nil)
+		s.picker = picker.New("Cluster", s.items, nil)
 		return s, nil
 
-	case components.PickerSelectedMsg:
+	case picker.PickerSelectedMsg:
 		// Find the index of the picked label in items.
 		for i, it := range s.items {
 			if it.Label == m.Value {
@@ -105,7 +105,7 @@ func (s *ClusterScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 		// Self-pop — the app will refresh state.
 		return nil, nil
 
-	case components.PickerCancelMsg:
+	case picker.PickerCancelMsg:
 		return nil, nil
 
 	case tea.WindowSizeMsg:

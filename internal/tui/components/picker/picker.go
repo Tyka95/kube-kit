@@ -1,4 +1,8 @@
-package components
+// Package picker is the kubekit list-selection widget. It owns one screen's
+// list of choices, the cursor / scroll / filter state, and the move-fade +
+// resting-shimmer animations. Screens embed a Picker value and pass tea.Msg
+// events through its Update method.
+package picker
 
 import (
 	"strings"
@@ -485,6 +489,29 @@ func (p Picker) View() string {
 	}
 
 	return b.String()
+}
+
+// lipglossWidth returns the printable cell width of a styled string by
+// stripping ANSI sequences manually. Duplicated from components/footer.go
+// because picker is now a separate package; the helper is too tiny to
+// justify a shared "stringwidth" package.
+func lipglossWidth(s string) int {
+	n := 0
+	in := false
+	for _, r := range s {
+		if r == 0x1b {
+			in = true
+			continue
+		}
+		if in {
+			if r == 'm' {
+				in = false
+			}
+			continue
+		}
+		n++
+	}
+	return n
 }
 
 func truncate(s string, max int) string {

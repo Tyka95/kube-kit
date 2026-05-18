@@ -11,7 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Tyka95/kube-kit/internal/awssession"
-	"github.com/Tyka95/kube-kit/internal/tui/components"
+	"github.com/Tyka95/kube-kit/internal/tui/components/picker"
 	"github.com/Tyka95/kube-kit/internal/tui/state"
 	"github.com/Tyka95/kube-kit/internal/tui/theme"
 )
@@ -23,20 +23,20 @@ type awsActionDoneMsg struct {
 
 // AWSScreen is the AWS submenu screen.
 type AWSScreen struct {
-	picker components.Picker
+	picker picker.Picker
 	// status text shown above the picker while an action is in flight
 	status string
 }
 
 // NewAWSScreen constructs the AWS submenu screen.
 func NewAWSScreen() *AWSScreen {
-	items := []components.Item{
+	items := []picker.Item{
 		{Label: "SSO Login", Detail: "list profiles · aws sso login"},
 		{Label: "EKS Connect", Detail: "configure kubectl context"},
 		{Label: "S3 Buckets", Detail: "browse buckets"},
 	}
 	return &AWSScreen{
-		picker: components.New("AWS", items, nil),
+		picker: picker.New("AWS", items, nil),
 	}
 }
 
@@ -64,7 +64,7 @@ func (s *AWSScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 		s.picker.SetSize(m.Width, pickerBodyHeight(m.Height))
 		return s, nil
 
-	case components.PickerSelectedMsg:
+	case picker.PickerSelectedMsg:
 		switch m.Value {
 		case "SSO Login":
 			// Pick a profile (fast) then exec the interactive sso login via
@@ -104,7 +104,7 @@ func (s *AWSScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 		}
 		return s, nil
 
-	case components.PickerCancelMsg:
+	case picker.PickerCancelMsg:
 		// Self-pop — signal the app to pop this screen.
 		return nil, nil
 

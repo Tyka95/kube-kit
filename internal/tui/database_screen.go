@@ -11,7 +11,7 @@ import (
 	"github.com/Tyka95/kube-kit/internal/kctx"
 	"github.com/Tyka95/kube-kit/internal/rds"
 	"github.com/Tyka95/kube-kit/internal/tunnel"
-	"github.com/Tyka95/kube-kit/internal/tui/components"
+	"github.com/Tyka95/kube-kit/internal/tui/components/picker"
 	"github.com/Tyka95/kube-kit/internal/tui/state"
 	"github.com/Tyka95/kube-kit/internal/tui/theme"
 )
@@ -45,8 +45,8 @@ type DatabaseScreen struct {
 	cfg       *config.Config
 	session   *awssession.Session
 	discover  *rds.Discoverer
-	picker    components.Picker
-	items     []components.Item
+	picker    picker.Picker
+	items     []picker.Item
 	endpoints []resolvedEndpoint // parallel to items; does NOT include the Custom row
 	status    string             // "Discovering…", error, identity line, or mismatch warning
 	tunnel    *tunnel.Tunnel
@@ -59,7 +59,7 @@ func NewDatabaseScreen(cfg *config.Config, session *awssession.Session, discover
 		cfg:      cfg,
 		session:  session,
 		discover: discover,
-		picker:   components.New("Database", nil, []components.Bind{{Key: "r", Action: "refresh"}}),
+		picker:   picker.New("Database", nil, []picker.Bind{{Key: "r", Action: "refresh"}}),
 		status:   "Discovering…",
 	}
 }
@@ -115,7 +115,7 @@ func (s *DatabaseScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 				continue
 			}
 			seen[t.Host] = true
-			s.items = append(s.items, components.Item{
+			s.items = append(s.items, picker.Item{
 				Label:  t.Name,
 				Detail: "configured",
 				Meta:   "",
@@ -134,7 +134,7 @@ func (s *DatabaseScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 				continue
 			}
 			seen[ep.Host] = true
-			s.items = append(s.items, components.Item{
+			s.items = append(s.items, picker.Item{
 				Label:  ep.Identifier,
 				Detail: ep.Region,
 				Meta:   ep.Profile,
@@ -149,14 +149,14 @@ func (s *DatabaseScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 
 		// Custom endpoint stub — always last; parallel endpoints slice does NOT
 		// hold an entry for this row (handled separately in PickerSelectedMsg).
-		s.items = append(s.items, components.Item{
+		s.items = append(s.items, picker.Item{
 			Label:  customEndpointLabel,
 			Detail: "enter manually",
 			Meta:   "",
 		})
 
-		s.picker = components.New("Database", s.items,
-			[]components.Bind{{Key: "r", Action: "refresh"}})
+		s.picker = picker.New("Database", s.items,
+			[]picker.Bind{{Key: "r", Action: "refresh"}})
 		s.picker.SetSize(app.Width, pickerBodyHeight(app.Height))
 
 		// Build the identity status line.
@@ -184,7 +184,7 @@ func (s *DatabaseScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 		}
 		return s, nil
 
-	case components.PickerSelectedMsg:
+	case picker.PickerSelectedMsg:
 		// Custom endpoint stub.
 		if m.Value == customEndpointLabel {
 			// TODO(v1.1): open an inline text-input dialog for arbitrary host:port.
@@ -240,7 +240,7 @@ func (s *DatabaseScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 		s.status = "tunnel error: " + m.err.Error()
 		return s, nil
 
-	case components.PickerActionMsg:
+	case picker.PickerActionMsg:
 		if m.Action == "refresh" {
 			s.discover.Invalidate()
 			s.status = "Discovering…"
@@ -248,7 +248,7 @@ func (s *DatabaseScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 		}
 		return s, nil
 
-	case components.PickerCancelMsg:
+	case picker.PickerCancelMsg:
 		if s.tunnel != nil {
 			_ = s.tunnel.Close()
 			s.tunnel = nil

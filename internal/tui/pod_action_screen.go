@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Tyka95/kube-kit/internal/tui/components"
+	"github.com/Tyka95/kube-kit/internal/tui/components/picker"
 	"github.com/Tyka95/kube-kit/internal/tui/state"
 	"github.com/Tyka95/kube-kit/internal/tui/theme"
 )
@@ -33,7 +34,7 @@ type podActionLoadedMsg struct {
 type PodActionScreen struct {
 	namespace string
 	action    PodAction
-	picker    components.Picker
+	picker    picker.Picker
 	spinner   components.Spinner
 	loading   bool
 	err       error
@@ -42,11 +43,11 @@ type PodActionScreen struct {
 
 // NewPodActionScreen constructs a PodActionScreen for the given namespace and action.
 func NewPodActionScreen(namespace string, action PodAction) *PodActionScreen {
-	binds := []components.Bind{{Key: "r", Action: "refresh"}}
+	binds := []picker.Bind{{Key: "r", Action: "refresh"}}
 	return &PodActionScreen{
 		namespace: namespace,
 		action:    action,
-		picker:    components.New(action.Name, nil, binds),
+		picker:    picker.New(action.Name, nil, binds),
 		spinner:   components.NewSpinner(),
 		loading:   true,
 	}
@@ -116,19 +117,19 @@ func (s *PodActionScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 		if m.err != nil {
 			return s, nil
 		}
-		items := make([]components.Item, 0, len(m.rows))
+		items := make([]picker.Item, 0, len(m.rows))
 		for _, row := range m.rows {
-			items = append(items, components.Item{Label: row.name, Detail: row.phase, Meta: "restarts: " + row.restarts})
+			items = append(items, picker.Item{Label: row.name, Detail: row.phase, Meta: "restarts: " + row.restarts})
 		}
-		binds := []components.Bind{{Key: "r", Action: "refresh"}}
-		s.picker = components.New(s.action.Name, items, binds)
+		binds := []picker.Bind{{Key: "r", Action: "refresh"}}
+		s.picker = picker.New(s.action.Name, items, binds)
 		return s, nil
-	case components.PickerSelectedMsg:
+	case picker.PickerSelectedMsg:
 		if s.action.OnSelected != nil {
 			return s, s.action.OnSelected(m.Value)
 		}
 		return s, nil
-	case components.PickerActionMsg:
+	case picker.PickerActionMsg:
 		if m.Action == "refresh" {
 			s.loading = true
 			s.err = nil
@@ -136,7 +137,7 @@ func (s *PodActionScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 			return s, tea.Batch(s.loadPods(), s.spinner.Start())
 		}
 		return s, nil
-	case components.PickerCancelMsg:
+	case picker.PickerCancelMsg:
 		s.spinner.Stop()
 		return nil, nil
 	case podActionStatusMsg:

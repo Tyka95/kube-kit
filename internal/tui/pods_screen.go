@@ -5,26 +5,26 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/Tyka95/kube-kit/internal/tui/components"
+	"github.com/Tyka95/kube-kit/internal/tui/components/picker"
 	"github.com/Tyka95/kube-kit/internal/tui/state"
 	"github.com/Tyka95/kube-kit/internal/tui/theme"
 )
 
 // PodsScreen shows pod-related actions.
 type PodsScreen struct {
-	picker components.Picker
+	picker picker.Picker
 	status string
 }
 
 // NewPodsScreen constructs the Pods action menu.
 func NewPodsScreen() *PodsScreen {
-	items := []components.Item{
+	items := []picker.Item{
 		{Label: "List Pods", Detail: "show all pods in namespace"},
 		{Label: "View Logs", Detail: "tail pod logs"},
 		{Label: "Open Shell", Detail: "exec -it /bin/sh"},
 		{Label: "Inspect", Detail: "describe pod"},
 	}
-	return &PodsScreen{picker: components.New("Pods", items, nil)}
+	return &PodsScreen{picker: picker.New("Pods", items, nil)}
 }
 
 func (s *PodsScreen) Init() tea.Cmd             { return nil }
@@ -42,7 +42,7 @@ func (s *PodsScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 	}
 
 	switch v := msg.(type) {
-	case components.PickerSelectedMsg:
+	case picker.PickerSelectedMsg:
 		switch v.Value {
 		case "List Pods":
 			app.Push(NewPodListScreen(app.KubeNamespace))
@@ -101,7 +101,7 @@ func (s *PodsScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 			s.status = v.Value + ": not yet implemented"
 		}
 		return s, nil
-	case components.PickerCancelMsg:
+	case picker.PickerCancelMsg:
 		return nil, nil
 	}
 

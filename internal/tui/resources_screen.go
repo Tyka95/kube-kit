@@ -7,25 +7,25 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Tyka95/kube-kit/internal/kctx"
-	"github.com/Tyka95/kube-kit/internal/tui/components"
+	"github.com/Tyka95/kube-kit/internal/tui/components/picker"
 	"github.com/Tyka95/kube-kit/internal/tui/state"
 	"github.com/Tyka95/kube-kit/internal/tui/theme"
 )
 
 // ResourcesScreen shows cluster-resource browsing actions.
 type ResourcesScreen struct {
-	picker components.Picker
+	picker picker.Picker
 	status string
 }
 
 // NewResourcesScreen constructs the Resources action menu.
 func NewResourcesScreen() *ResourcesScreen {
-	items := []components.Item{
+	items := []picker.Item{
 		{Label: "Namespaces", Detail: "list all namespaces"},
 		{Label: "Services", Detail: "list services in namespace"},
 		{Label: "Ingress", Detail: "list ingress rules"},
 	}
-	return &ResourcesScreen{picker: components.New("Resources", items, nil)}
+	return &ResourcesScreen{picker: picker.New("Resources", items, nil)}
 }
 
 func (s *ResourcesScreen) Init() tea.Cmd             { return nil }
@@ -43,7 +43,7 @@ func (s *ResourcesScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 	}
 
 	switch v := msg.(type) {
-	case components.PickerSelectedMsg:
+	case picker.PickerSelectedMsg:
 		switch v.Value {
 		case "Namespaces":
 			app.Push(NewResourceListScreen(ResourceAction{
@@ -78,7 +78,7 @@ func (s *ResourcesScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 			s.status = v.Value + ": not yet implemented"
 		}
 		return s, nil
-	case components.PickerCancelMsg:
+	case picker.PickerCancelMsg:
 		return nil, nil
 	case resourceActionStatusMsg:
 		s.status = theme.InfoCallout(v.kind, v.text)

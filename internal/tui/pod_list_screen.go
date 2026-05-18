@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Tyka95/kube-kit/internal/tui/components"
+	"github.com/Tyka95/kube-kit/internal/tui/components/picker"
 	"github.com/Tyka95/kube-kit/internal/tui/state"
 	"github.com/Tyka95/kube-kit/internal/tui/theme"
 )
@@ -29,7 +30,7 @@ type podsLoadedMsg struct {
 // PodListScreen lists pods in the current namespace.
 type PodListScreen struct {
 	namespace string
-	picker    components.Picker
+	picker    picker.Picker
 	spinner   components.Spinner
 	loading   bool
 	err       error
@@ -38,12 +39,12 @@ type PodListScreen struct {
 
 // NewPodListScreen constructs a PodListScreen in the loading state.
 func NewPodListScreen(namespace string) *PodListScreen {
-	binds := []components.Bind{
+	binds := []picker.Bind{
 		{Key: "r", Action: "refresh"},
 	}
 	return &PodListScreen{
 		namespace: namespace,
-		picker:    components.New("Pod List", nil, binds),
+		picker:    picker.New("Pod List", nil, binds),
 		spinner:   components.NewSpinner(),
 		loading:   true,
 	}
@@ -122,25 +123,25 @@ func (s *PodListScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 		if m.err != nil {
 			return s, nil
 		}
-		items := make([]components.Item, 0, len(m.rows))
+		items := make([]picker.Item, 0, len(m.rows))
 		for _, row := range m.rows {
-			items = append(items, components.Item{
+			items = append(items, picker.Item{
 				Label:  row.name,
 				Detail: row.phase,
 				Meta:   "restarts: " + row.restarts,
 			})
 		}
-		binds := []components.Bind{
+		binds := []picker.Bind{
 			{Key: "r", Action: "refresh"},
 		}
-		s.picker = components.New("Pod List", items, binds)
+		s.picker = picker.New("Pod List", items, binds)
 		return s, nil
 
-	case components.PickerSelectedMsg:
+	case picker.PickerSelectedMsg:
 		s.status = theme.InfoCallout("info", "selected: "+m.Value+" (drill-in not yet implemented)")
 		return s, nil
 
-	case components.PickerActionMsg:
+	case picker.PickerActionMsg:
 		if m.Action == "refresh" {
 			s.loading = true
 			s.err = nil
@@ -149,7 +150,7 @@ func (s *PodListScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 		}
 		return s, nil
 
-	case components.PickerCancelMsg:
+	case picker.PickerCancelMsg:
 		s.spinner.Stop()
 		return nil, nil
 	}

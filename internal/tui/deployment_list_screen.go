@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Tyka95/kube-kit/internal/tui/components"
+	"github.com/Tyka95/kube-kit/internal/tui/components/picker"
 	"github.com/Tyka95/kube-kit/internal/tui/state"
 	"github.com/Tyka95/kube-kit/internal/tui/theme"
 )
@@ -44,7 +45,7 @@ type DeploymentAction struct {
 type DeploymentListScreen struct {
 	namespace string
 	action    DeploymentAction
-	picker    components.Picker
+	picker    picker.Picker
 	spinner   components.Spinner
 	loading   bool
 	err       error
@@ -53,13 +54,13 @@ type DeploymentListScreen struct {
 
 // NewDeploymentListScreen constructs a DeploymentListScreen in the loading state.
 func NewDeploymentListScreen(namespace string, action DeploymentAction) *DeploymentListScreen {
-	binds := []components.Bind{
+	binds := []picker.Bind{
 		{Key: "r", Action: "refresh"},
 	}
 	return &DeploymentListScreen{
 		namespace: namespace,
 		action:    action,
-		picker:    components.New(action.Name, nil, binds),
+		picker:    picker.New(action.Name, nil, binds),
 		spinner:   components.NewSpinner(),
 		loading:   true,
 	}
@@ -153,25 +154,25 @@ func (s *DeploymentListScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 		if m.err != nil {
 			return s, nil
 		}
-		items := make([]components.Item, 0, len(m.rows))
+		items := make([]picker.Item, 0, len(m.rows))
 		for _, row := range m.rows {
-			items = append(items, components.Item{
+			items = append(items, picker.Item{
 				Label:  row.name,
 				Detail: row.ready + "/" + row.desired,
 				Meta:   "image:" + row.image,
 			})
 		}
-		binds := []components.Bind{{Key: "r", Action: "refresh"}}
-		s.picker = components.New(s.action.Name, items, binds)
+		binds := []picker.Bind{{Key: "r", Action: "refresh"}}
+		s.picker = picker.New(s.action.Name, items, binds)
 		return s, nil
 
-	case components.PickerSelectedMsg:
+	case picker.PickerSelectedMsg:
 		if s.action.OnSelected != nil {
 			return s, s.action.OnSelected(m.Value)
 		}
 		return s, nil
 
-	case components.PickerActionMsg:
+	case picker.PickerActionMsg:
 		if m.Action == "refresh" {
 			s.loading = true
 			s.err = nil
@@ -180,7 +181,7 @@ func (s *DeploymentListScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 		}
 		return s, nil
 
-	case components.PickerCancelMsg:
+	case picker.PickerCancelMsg:
 		s.spinner.Stop()
 		return nil, nil
 

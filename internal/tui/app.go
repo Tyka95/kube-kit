@@ -16,6 +16,7 @@ import (
 	"github.com/Tyka95/kube-kit/internal/kctx"
 	"github.com/Tyka95/kube-kit/internal/rds"
 	"github.com/Tyka95/kube-kit/internal/tui/components"
+	"github.com/Tyka95/kube-kit/internal/tui/components/picker"
 	"github.com/Tyka95/kube-kit/internal/tui/state"
 )
 
@@ -149,12 +150,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case QuitMsg:
 		return a, tea.Quit
-	case components.PickerHelpMsg:
+	case picker.PickerHelpMsg:
 		// Any screen's '?' lands here. Push the help overlay seeded with the
 		// current screen's KeyHints so it can show them.
 		a.Push(NewHelpScreen(a.KeyHints))
 		return a, nil
-	case components.PickerCommandMsg:
+	case picker.PickerCommandMsg:
 		// Any screen's ':' lands here. Dispatch the command; on quit-sentinel
 		// exit, on help-sentinel push help, otherwise just absorb (caller's
 		// state is already updated by the handler).
