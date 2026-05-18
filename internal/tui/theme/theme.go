@@ -60,6 +60,10 @@ var (
 	FooterCount = lipgloss.NewStyle().Foreground(Muted)
 
 	HelpHeader = lipgloss.NewStyle().Foreground(Accent).Bold(true)
+
+	// SelectionMarker is the '❯' caret rendered to the left of the selected
+	// row. Accent fg, bold, no background — appears as a floating pointer.
+	SelectionMarker = lipgloss.NewStyle().Foreground(Accent).Bold(true)
 )
 
 // SelectionBGAt returns the row-selection background color at a given fade

@@ -423,21 +423,27 @@ func (p Picker) View() string {
 
 		var row string
 		if isSel {
-			// Selected row: plain-text layout (ASCII-safe for shimmer slicing).
-			// Bold accent bar leader; bold label segment; muted detail/meta.
-			plain := "  " + label + "   " + detail
+			// Selected row layout:
+			//   ❯ <label>   <detail>   <meta>
+			// The ❯ is rendered in the accent fg without the row's bg so it
+			// reads as a separate "pointer" rather than blending in. The
+			// remaining ' <label>...<meta>' plain string gets the selection
+			// bg + optional shimmer band overlay.
+			const markerCols = 2 // visible width of "❯ "
+			plain := " " + label + "   " + detail
 			if it.Meta != "" {
 				plain += "   " + meta
 			}
-			plain = padRight(plain, p.Width)
+			// Pad the bg-painted portion to (Width - markerCols) so the bg
+			// reaches the right edge of the terminal.
+			plain = padRight(plain, p.Width-markerCols)
 
 			baseBG := theme.SelectionBGAt(p.flashFrame, selectFlashFrames)
-			rendered := baseBG.Render(plain)
+			marker := theme.SelectionMarker.Render("❯") + " "
 
-			// Overlay shimmer band only after the flash has settled
-			// (frame == selectFlashFrames). During fade we just show the
-			// fading bg without the band.
+			rendered := baseBG.Render(plain)
 			if p.flashFrame >= selectFlashFrames {
+				// Overlay the shimmer band only after the flash settles.
 				width := len(plain)
 				start := p.shimmerPos - shimmerWidth/2
 				if start < 0 {
@@ -457,9 +463,10 @@ func (p Picker) View() string {
 						baseBG.Render(plain[end:])
 				}
 			}
-			row = rendered
+			row = marker + rendered
 		} else {
-			// Unselected row: keep per-column color hierarchy.
+			// Unselected row: 2-space lead-in matching the marker width so
+			// the columns line up between selected and unselected rows.
 			labelCol := theme.ListLabel.Render(label)
 			detailCol := theme.ListDetail.Render(detail)
 			metaCol := theme.ListMeta.Render(meta)

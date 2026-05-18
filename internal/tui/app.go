@@ -90,8 +90,11 @@ func (a *App) Current() Screen {
 }
 
 // Init delegates to the current screen and fires startup state-loaders.
+// tea.HideCursor suppresses the terminal's blinking cursor so the only
+// visible focus indicator is the picker's ❯ + selection bg.
 func (a *App) Init() tea.Cmd {
 	return tea.Batch(
+		tea.HideCursor,
 		a.Current().Init(),
 		a.loadKubeContext(),
 		a.validateAWSSession(true),
