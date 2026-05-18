@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"os/exec"
+
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Tyka95/kube-kit/internal/tui/components"
@@ -45,10 +47,55 @@ func (s *PodsScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 		case "List Pods":
 			app.Push(NewPodListScreen(app.KubeNamespace))
 			return s, nil
+		case "View Logs":
+			ns := app.KubeNamespace
+			app.Push(NewPodActionScreen(ns, PodAction{
+				Name: "logs",
+				OnSelected: func(pod string) tea.Cmd {
+					cmd := exec.Command("kubectl", "logs", "-f", "--tail=200", pod, "-n", ns)
+					return tea.ExecProcess(cmd, func(err error) tea.Msg {
+						if err != nil {
+							return podActionStatusMsg{kind: "error", text: "kubectl logs: " + err.Error()}
+						}
+						return podActionStatusMsg{kind: "info", text: "logs closed for " + pod}
+					})
+				},
+			}))
+			return s, nil
+		case "Open Shell":
+			ns := app.KubeNamespace
+			app.Push(NewPodActionScreen(ns, PodAction{
+				Name: "shell",
+				OnSelected: func(pod string) tea.Cmd {
+					cmd := exec.Command("kubectl", "exec", "-it", pod, "-n", ns, "--", "/bin/sh")
+					return tea.ExecProcess(cmd, func(err error) tea.Msg {
+						if err != nil {
+							return podActionStatusMsg{kind: "error", text: "kubectl exec: " + err.Error()}
+						}
+						return podActionStatusMsg{kind: "info", text: "shell closed for " + pod}
+					})
+				},
+			}))
+			return s, nil
+		case "Inspect":
+			ns := app.KubeNamespace
+			app.Push(NewPodActionScreen(ns, PodAction{
+				Name: "inspect",
+				OnSelected: func(pod string) tea.Cmd {
+					cmd := exec.Command("sh", "-c", "kubectl describe pod "+pod+" -n "+ns+" | less")
+					return tea.ExecProcess(cmd, func(err error) tea.Msg {
+						if err != nil {
+							return podActionStatusMsg{kind: "error", text: "kubectl describe: " + err.Error()}
+						}
+						return podActionStatusMsg{kind: "info", text: "inspect closed for " + pod}
+					})
+				},
+			}))
+			return s, nil
 		default:
 			s.status = v.Value + ": not yet implemented"
-			return s, nil
 		}
+		return s, nil
 	case components.PickerCancelMsg:
 		return nil, nil
 	}

@@ -1,6 +1,10 @@
 package tui
 
 import (
+	"context"
+	"os/exec"
+	"time"
+
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Tyka95/kube-kit/internal/tui/components"
@@ -40,8 +44,66 @@ func (s *DeploymentsScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 
 	switch v := msg.(type) {
 	case components.PickerSelectedMsg:
-		s.status = v.Value + ": not yet implemented"
+		switch v.Value {
+		case "Browse":
+			ns := app.KubeNamespace
+			app.Push(NewDeploymentListScreen(ns, DeploymentAction{
+				Name: "browse",
+				OnSelected: func(dep string) tea.Cmd {
+					cmd := exec.Command("sh", "-c", "kubectl describe deployment "+dep+" -n "+ns+" | less")
+					return tea.ExecProcess(cmd, func(err error) tea.Msg {
+						if err != nil {
+							return deploymentActionStatusMsg{kind: "error", text: "kubectl describe: " + err.Error()}
+						}
+						return deploymentActionStatusMsg{kind: "info", text: "closed: " + dep}
+					})
+				},
+			}))
+			return s, nil
+
+		case "Scale":
+			ns := app.KubeNamespace
+			app.Push(NewDeploymentListScreen(ns, DeploymentAction{
+				Name: "scale",
+				OnSelected: func(dep string) tea.Cmd {
+					// gum input runs in a real terminal — tea.ExecProcess suspends bubbletea
+					// and pipes the entered replicas to kubectl scale.
+					cmd := exec.Command("sh", "-c",
+						"replicas=$(gum input --placeholder=\"new replica count\" --prompt=\"replicas › \") && "+
+							"[ -n \"$replicas\" ] && kubectl scale deployment "+dep+" --replicas=\"$replicas\" -n "+ns)
+					return tea.ExecProcess(cmd, func(err error) tea.Msg {
+						if err != nil {
+							return deploymentActionStatusMsg{kind: "error", text: "scale failed: " + err.Error()}
+						}
+						return deploymentActionStatusMsg{kind: "ok", text: "scaled: " + dep}
+					})
+				},
+			}))
+			return s, nil
+
+		case "Restart":
+			ns := app.KubeNamespace
+			app.Push(NewDeploymentListScreen(ns, DeploymentAction{
+				Name: "restart",
+				OnSelected: func(dep string) tea.Cmd {
+					return func() tea.Msg {
+						ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+						defer cancel()
+						err := exec.CommandContext(ctx, "kubectl", "rollout", "restart", "deployment/"+dep, "-n", ns).Run()
+						if err != nil {
+							return deploymentActionStatusMsg{kind: "error", text: "rollout restart: " + err.Error()}
+						}
+						return deploymentActionStatusMsg{kind: "ok", text: "restarted: " + dep}
+					}
+				},
+			}))
+			return s, nil
+
+		default:
+			s.status = v.Value + ": not yet implemented"
+		}
 		return s, nil
+
 	case components.PickerCancelMsg:
 		return nil, nil
 	}
