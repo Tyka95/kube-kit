@@ -91,8 +91,8 @@ func (s *PodListScreen) loadPods() tea.Cmd {
 	}
 }
 
-// Breadcrumb returns the label pushed onto the breadcrumb trail.
-func (s *PodListScreen) Breadcrumb() string { return "Pods · list" }
+// Breadcrumb is just "list" — the parent PodsScreen already contributes "Pods".
+func (s *PodListScreen) Breadcrumb() string { return "list" }
 
 // KeyHints returns the per-screen contextual hints.
 func (s *PodListScreen) KeyHints() []state.KeyHint {

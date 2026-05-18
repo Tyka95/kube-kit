@@ -5,6 +5,7 @@ package tui
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -209,6 +210,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if cur != nil {
 			a.screenStack[preLen-1] = cur
 		}
+		// Critical: invoke Init() on the newly-pushed screen so loaders fire.
+		// Without this, screens like PodListScreen stay stuck on "loading…"
+		// because kubectl never runs.
+		newTop := a.screenStack[len(a.screenStack)-1]
+		if initCmd := newTop.Init(); initCmd != nil {
+			cmd = tea.Batch(cmd, initCmd)
+		}
 	case postLen < preLen:
 		// Screen called app.Pop() directly. Nothing more to do.
 	case cur == nil:
@@ -228,20 +236,30 @@ func (a *App) View() string {
 
 	header := components.Header(a.AppState)
 	breadcrumb := components.Breadcrumb(a.AppState)
-
-	bodyHeight := a.Height - components.HeaderHeight - components.FooterHeight - 2 // -2 for breadcrumb + blank
-	if bodyHeight < 1 {
-		bodyHeight = 1
-	}
-
 	body := a.Current().View(a)
-
 	footer := components.Footer(a.AppState, components.FooterOpts{
 		Position: a.currentPickerPosition(),
 	})
 
-	// Compose with absolute newlines so the screen lays out predictably.
-	return header + "\n" + breadcrumb + "\n\n" + body + footer
+	// Compute how many rows the body actually occupies, then pad with blank
+	// lines so the footer is pinned to the bottom of the terminal regardless
+	// of how short the body is (e.g. 'loading pods…' that's only 1 line).
+	headerRows := strings.Count(header, "\n") + 1
+	breadcrumbRows := 1
+	footerRows := strings.Count(footer, "\n") + 1
+	// Layout: header + blank + breadcrumb + blank + body + (pad) + footer.
+	usedFixed := headerRows + 1 + breadcrumbRows + 1 + footerRows
+	bodyLines := strings.Count(body, "\n")
+	// Each \n in body separates lines; the final line has no \n trailing only
+	// if body ends with one. Normalize: body lines = count(\n) (trailing
+	// newlines are OK; we treat each as a row).
+	pad := a.Height - usedFixed - bodyLines
+	if pad < 0 {
+		pad = 0
+	}
+	padding := strings.Repeat("\n", pad)
+
+	return header + "\n" + breadcrumb + "\n\n" + body + padding + footer
 }
 
 // currentPickerPosition asks the active screen if it has a position to show.
