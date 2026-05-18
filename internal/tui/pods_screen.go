@@ -82,7 +82,12 @@ func (s *PodsScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 			app.Push(NewPodActionScreen(ns, PodAction{
 				Name: "inspect",
 				OnSelected: func(pod string) tea.Cmd {
-					cmd := exec.Command("sh", "-c", "kubectl describe pod "+pod+" -n "+ns+" | less")
+					// Buffer kubectl output to a temp file then less it. Piping
+					// directly (kubectl | less) leaves less's stdin attached
+					// to the pipe so 'q' to exit doesn't reach less under
+					// tea.ExecProcess.
+					cmd := exec.Command("sh", "-c",
+						`f=$(mktemp) && kubectl describe pod `+shEscape(pod)+` -n `+shEscape(ns)+` > "$f" 2>&1 && less -R "$f"; rm -f "$f"`)
 					return tea.ExecProcess(cmd, func(err error) tea.Msg {
 						if err != nil {
 							return podActionStatusMsg{kind: "error", text: "kubectl describe: " + err.Error()}

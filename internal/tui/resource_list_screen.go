@@ -188,26 +188,17 @@ func parseRow(kind ResourceKind, fields []string) resourceRow {
 }
 
 // defaultDescribe returns a Cmd that opens 'kubectl describe <kind> <name>' in
-// less via tea.ExecProcess.
+// less via tea.ExecProcess. The output is buffered to a temp file first so
+// less's stdin remains the terminal — without that, piping kubectl | less
+// leaves less unable to receive the 'q' keystroke to quit.
 func defaultDescribe(kind ResourceKind, ns, name string) tea.Cmd {
-	args := []string{"describe", string(kind), name}
+	args := "describe " + shEscape(string(kind)) + " " + shEscape(name)
 	if ns != "" {
-		args = append(args, "-n", ns)
+		args += " -n " + shEscape(ns)
 	}
-	kubectl := exec.Command("kubectl", args...)
-	less := exec.Command("less")
-	less.Stdin, _ = kubectl.StdoutPipe()
-	less.Stderr = nil
+	shCmd := `f=$(mktemp) && kubectl ` + args + ` > "$f" 2>&1 && less -R "$f"; rm -f "$f"`
 
-	// Build a combined command string for tea.ExecProcess via sh -c so that
-	// piping works without managing two processes manually.
-	pipeCmd := "kubectl describe " + string(kind) + " " + name
-	if ns != "" {
-		pipeCmd += " -n " + ns
-	}
-	pipeCmd += " | less"
-
-	sh := exec.Command("sh", "-c", pipeCmd)
+	sh := exec.Command("sh", "-c", shCmd)
 	return tea.ExecProcess(sh, func(err error) tea.Msg {
 		if err != nil {
 			return resourceActionStatusMsg{kind: "error", text: "describe failed: " + err.Error()}

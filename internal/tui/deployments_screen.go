@@ -50,7 +50,8 @@ func (s *DeploymentsScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 			app.Push(NewDeploymentListScreen(ns, DeploymentAction{
 				Name: "browse",
 				OnSelected: func(dep string) tea.Cmd {
-					cmd := exec.Command("sh", "-c", "kubectl describe deployment "+dep+" -n "+ns+" | less")
+					cmd := exec.Command("sh", "-c",
+						`f=$(mktemp) && kubectl describe deployment `+shEscape(dep)+` -n `+shEscape(ns)+` > "$f" 2>&1 && less -R "$f"; rm -f "$f"`)
 					return tea.ExecProcess(cmd, func(err error) tea.Msg {
 						if err != nil {
 							return deploymentActionStatusMsg{kind: "error", text: "kubectl describe: " + err.Error()}
