@@ -3,7 +3,11 @@
 // 256-color and ANSI-16 fallbacks automatically.
 package theme
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"fmt"
+
+	"github.com/charmbracelet/lipgloss"
+)
 
 // Color tokens.
 var (
@@ -57,6 +61,52 @@ var (
 
 	HelpHeader = lipgloss.NewStyle().Foreground(Accent).Bold(true)
 )
+
+// SelectionBGAt returns the row-selection background color at a given fade
+// frame. Frame 0 = full flash (bright accent), frame N (settled) = SelectBG.
+// In between the RGB is linearly interpolated so the eye sees a smooth fade.
+// `total` should be the number of frames before reaching settled.
+func SelectionBGAt(frame, total int) lipgloss.Style {
+	if frame <= 0 {
+		return lipgloss.NewStyle().Background(SelectFlashBG)
+	}
+	if frame >= total {
+		return lipgloss.NewStyle().Background(SelectBG)
+	}
+	// Interpolate on dark-theme hexes (kubekit is dark-first).
+	r := lerpHex("#7aa2f7", "#283457", float64(frame)/float64(total))
+	return lipgloss.NewStyle().Background(lipgloss.Color(r))
+}
+
+// lerpHex interpolates between two #rrggbb strings.
+func lerpHex(a, b string, t float64) string {
+	ar, ag, ab := parseHex(a)
+	br, bg, bb := parseHex(b)
+	mix := func(x, y int) int { return int(float64(x) + (float64(y)-float64(x))*t) }
+	return fmt.Sprintf("#%02x%02x%02x", mix(ar, br), mix(ag, bg), mix(ab, bb))
+}
+
+func parseHex(s string) (r, g, b int) {
+	if len(s) != 7 || s[0] != '#' {
+		return 0, 0, 0
+	}
+	parse := func(hi, lo byte) int {
+		return hexNibble(hi)*16 + hexNibble(lo)
+	}
+	return parse(s[1], s[2]), parse(s[3], s[4]), parse(s[5], s[6])
+}
+
+func hexNibble(b byte) int {
+	switch {
+	case b >= '0' && b <= '9':
+		return int(b - '0')
+	case b >= 'a' && b <= 'f':
+		return int(b-'a') + 10
+	case b >= 'A' && b <= 'F':
+		return int(b-'A') + 10
+	}
+	return 0
+}
 
 // InfoCallout renders a leading-icon callout suitable for transient status
 // lines like "X: not yet implemented" or "tunnel active: ...".

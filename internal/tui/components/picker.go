@@ -10,14 +10,15 @@ import (
 	"github.com/Tyka95/kube-kit/internal/tui/theme"
 )
 
-// Animation: selection-move feedback. The newly-selected row paints with
-// SelectFlashBG for one tick, then settles to SelectBG. ~180ms is just long
-// enough to actually see the flash without feeling sluggish.
-const selectFlashDuration = 180 * time.Millisecond
+// Animation: selection-move feedback. The newly-selected row fades from
+// bright accent (frame 0) through 4 intermediate steps back to the settled
+// SelectBG (frame 5). Each step ~30ms — total ~150ms — smooth to the eye.
+const selectFlashFrameInterval = 30 * time.Millisecond
+const selectFlashFrames = 5 // frames 1..5; frame 0 is the initial bright paint.
 
-// pickerFlashEndMsg is dispatched after the flash interval expires; it tells
-// the picker to drop the flash style back to the normal selection bg.
-type pickerFlashEndMsg struct{ token int }
+// pickerFlashTickMsg advances the multi-frame fade animation. The token
+// guards against late-arriving ticks from a previous move.
+type pickerFlashTickMsg struct{ token int }
 
 // Item is a row in the picker. Label is the value returned on selection.
 type Item struct {
@@ -59,9 +60,11 @@ type Picker struct {
 
 	visible []int // indexes into Items after filtering
 
-	// Flash animation state on selection change.
-	flashing   bool
-	flashToken int // monotonic token so a late-arriving tick is ignored
+	// Flash animation state on selection change. flashFrame counts up from 0
+	// to selectFlashFrames (settled). Token monotonically increases per move
+	// so a late-arriving tick from an earlier move is ignored.
+	flashFrame int
+	flashToken int
 }
 
 // PickerSelectedMsg fires on Enter / right-arrow.
@@ -103,10 +106,20 @@ func (p Picker) Init() tea.Cmd { return nil }
 
 // Update handles key presses + animation ticks.
 func (p Picker) Update(msg tea.Msg) (Picker, tea.Cmd) {
-	// Animation end: only honor it if the token matches the latest move.
-	if end, ok := msg.(pickerFlashEndMsg); ok {
-		if end.token == p.flashToken {
-			p.flashing = false
+	// Animation tick: advance the fade frame counter and schedule the next
+	// tick while frames remain. Stale tokens (from a prior move) are dropped.
+	if tick, ok := msg.(pickerFlashTickMsg); ok {
+		if tick.token != p.flashToken {
+			return p, nil
+		}
+		if p.flashFrame < selectFlashFrames {
+			p.flashFrame++
+			if p.flashFrame < selectFlashFrames {
+				tok := p.flashToken
+				return p, tea.Tick(selectFlashFrameInterval, func(time.Time) tea.Msg {
+					return pickerFlashTickMsg{token: tok}
+				})
+			}
 		}
 		return p, nil
 	}
@@ -202,15 +215,15 @@ func (p Picker) updateInput(km tea.KeyMsg) (Picker, tea.Cmd) {
 	return p, nil
 }
 
-// flash starts a selection-change flash. Returns a Cmd that emits a
-// pickerFlashEndMsg after selectFlashDuration. The token guards against
-// late-arriving end-msgs from a previous move.
+// flash starts a multi-frame selection fade. Frame 0 is bright accent;
+// each tick advances toward the settled SelectBG. The token guards
+// against ticks from a previous (now-stale) move.
 func (p *Picker) flash() tea.Cmd {
-	p.flashing = true
 	p.flashToken++
+	p.flashFrame = 0
 	tok := p.flashToken
-	return tea.Tick(selectFlashDuration, func(time.Time) tea.Msg {
-		return pickerFlashEndMsg{token: tok}
+	return tea.Tick(selectFlashFrameInterval, func(time.Time) tea.Msg {
+		return pickerFlashTickMsg{token: tok}
 	})
 }
 
@@ -335,11 +348,7 @@ func (p Picker) View() string {
 		row = lipgloss.NewStyle().MaxWidth(p.Width).Render(row)
 
 		if isSel {
-			if p.flashing {
-				row = theme.ListSelectedFlash.Render(row)
-			} else {
-				row = theme.ListSelected.Render(row)
-			}
+			row = theme.SelectionBGAt(p.flashFrame, selectFlashFrames).Render(row)
 		}
 		b.WriteString(row)
 		b.WriteString("\n")

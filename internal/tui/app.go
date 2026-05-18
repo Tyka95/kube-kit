@@ -41,12 +41,6 @@ type App struct {
 	Discover  *rds.Discoverer
 	Commands  *commands.Registry
 
-	// Push-animation state. transitionFrame counts down from 3 → 0 after a
-	// screen is pushed; while >0 the new screen renders with a brief
-	// indented prefix and the breadcrumb's last segment is bolded so the
-	// move is visible. Token-guarded for rapid navigation.
-	transitionFrame int
-	transitionToken int
 }
 
 // NewApp constructs the app at the main menu.
@@ -176,8 +170,6 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// If the command touched kube context / namespace / aws profile,
 		// re-load state so the header reflects reality immediately.
 		return a, tea.Batch(a.loadKubeContext(), a.validateAWSSession(true))
-	case transitionTickMsg:
-		return a, a.advanceTransition(m.token)
 	case ctxLoadedMsg:
 		if m.Err == nil {
 			a.KubeContext = m.Cluster
@@ -226,8 +218,6 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if initCmd := newTop.Init(); initCmd != nil {
 			cmd = tea.Batch(cmd, initCmd)
 		}
-		// Kick off a brief 3-frame transition for visible navigation feedback.
-		cmd = tea.Batch(cmd, a.startTransition())
 	case postLen < preLen:
 		// Screen called app.Pop() directly. Nothing more to do.
 	case cur == nil:
@@ -248,22 +238,6 @@ func (a *App) View() string {
 	header := components.Header(a.AppState)
 	breadcrumb := components.Breadcrumb(a.AppState)
 	body := a.Current().View(a)
-
-	// Push-animation: slide the body in from the right. Frame 3 indents by 6
-	// cols, frame 2 by 3, frame 1 by 1, frame 0 (settled) by 0. Lines are
-	// prefixed with spaces so the indentation is visible without lipgloss
-	// padding tricks.
-	if a.transitionFrame > 0 {
-		indent := map[int]int{3: 6, 2: 3, 1: 1}[a.transitionFrame]
-		if indent > 0 {
-			pad := strings.Repeat(" ", indent)
-			lines := strings.Split(body, "\n")
-			for i, l := range lines {
-				lines[i] = pad + l
-			}
-			body = strings.Join(lines, "\n")
-		}
-	}
 	footer := components.Footer(a.AppState, components.FooterOpts{
 		Position: a.currentPickerPosition(),
 	})
@@ -306,35 +280,3 @@ type PositionProvider interface {
 // QuitMsg is broadcast when the app should exit.
 type QuitMsg struct{}
 
-// transitionTickMsg drives the screen-push slide. The token is matched
-// against the App's current transitionToken so rapid pushes don't queue
-// stale ticks.
-type transitionTickMsg struct{ token int }
-
-// startTransition begins a 3-frame settle on the current top screen.
-// Returns the first tick cmd; each subsequent tick advances the counter.
-func (a *App) startTransition() tea.Cmd {
-	a.transitionToken++
-	a.transitionFrame = 3
-	tok := a.transitionToken
-	return tea.Tick(60*time.Millisecond, func(time.Time) tea.Msg {
-		return transitionTickMsg{token: tok}
-	})
-}
-
-// advanceTransition decrements the frame counter and schedules the next tick
-// while frames remain. Stale tokens are ignored.
-func (a *App) advanceTransition(tok int) tea.Cmd {
-	if tok != a.transitionToken {
-		return nil
-	}
-	if a.transitionFrame > 0 {
-		a.transitionFrame--
-	}
-	if a.transitionFrame == 0 {
-		return nil
-	}
-	return tea.Tick(60*time.Millisecond, func(time.Time) tea.Msg {
-		return transitionTickMsg{token: tok}
-	})
-}
