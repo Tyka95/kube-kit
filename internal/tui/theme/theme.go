@@ -116,6 +116,30 @@ func hexNibble(b byte) int {
 	return 0
 }
 
+// ShimmerGlowAt returns the foreground style for a row character at signed
+// distance d from the shimmer head:
+//
+//	d == 0   → bright primary + bold (the moving "head" of the glow)
+//	|d| == 1 → shoulder blend (bold, accent-tinted)
+//	|d| >= 2 → returns base unchanged (cold cell — no glow effect)
+//
+// The selection background is owned by the row renderer; this helper only
+// shapes the foreground. Same input always produces the same Style — pure.
+func ShimmerGlowAt(d int, base lipgloss.Style) lipgloss.Style {
+	abs := d
+	if abs < 0 {
+		abs = -abs
+	}
+	switch abs {
+	case 0:
+		return lipgloss.NewStyle().Foreground(Primary).Bold(true)
+	case 1:
+		return lipgloss.NewStyle().Foreground(Accent).Bold(true)
+	default:
+		return base
+	}
+}
+
 // InfoCallout renders a leading-icon callout suitable for transient status
 // lines like "X: not yet implemented" or "tunnel active: ...".
 //   kind: "info" | "warn" | "error" | "ok"
