@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Tyka95/kube-kit/internal/awssession"
@@ -35,6 +36,8 @@ type SSOLoginScreen struct {
 	url            string
 	code           string
 	browserOpened  bool // guard so we only fire `open <url>` once
+	codeCopied     bool // guard so we only copy to clipboard once
+	clipboardOK    bool // true if last copy attempt succeeded
 
 	completed bool
 	finalKind string // "ok" | "warn" | "error" — drives the callout color
@@ -144,6 +147,12 @@ func (s *SSOLoginScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 		if s.url != "" && !s.browserOpened {
 			s.browserOpened = true
 			openCmd = openBrowserCmd(s.url)
+		}
+		// Auto-copy the verification code to the system clipboard exactly
+		// once. The browser device-auth page expects the user to paste it.
+		if s.code != "" && !s.codeCopied {
+			s.codeCopied = true
+			s.clipboardOK = clipboard.WriteAll(s.code) == nil
 		}
 		if s.completed {
 			return s, openCmd
@@ -260,7 +269,11 @@ func (s *SSOLoginScreen) View(app *App) string {
 	if s.code != "" {
 		b.WriteString("  " + theme.Dim.Render("Enter this verification code:"))
 		b.WriteString("\n\n")
-		b.WriteString("    " + theme.HelpHeader.Render(s.code))
+		hint := "(copy failed — select manually)"
+		if s.clipboardOK {
+			hint = "(copied to clipboard)"
+		}
+		b.WriteString("    " + theme.HelpHeader.Render(s.code) + "  " + theme.Dim.Render(hint))
 		b.WriteString("\n\n")
 	}
 
