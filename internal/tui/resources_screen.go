@@ -1,8 +1,12 @@
 package tui
 
 import (
+	"context"
+	"time"
+
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/Tyka95/kube-kit/internal/kctx"
 	"github.com/Tyka95/kube-kit/internal/tui/components"
 	"github.com/Tyka95/kube-kit/internal/tui/state"
 	"github.com/Tyka95/kube-kit/internal/tui/theme"
@@ -40,10 +44,45 @@ func (s *ResourcesScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 
 	switch v := msg.(type) {
 	case components.PickerSelectedMsg:
-		s.status = v.Value + ": not yet implemented"
+		switch v.Value {
+		case "Namespaces":
+			app.Push(NewResourceListScreen(ResourceAction{
+				Kind: KindNamespaces,
+				Name: "namespaces",
+				OnSelected: func(name string) tea.Cmd {
+					return func() tea.Msg {
+						ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+						defer cancel()
+						if err := kctx.SetNamespace(ctx, name); err != nil {
+							return resourceActionStatusMsg{kind: "error", text: "set ns failed: " + err.Error()}
+						}
+						return resourceActionStatusMsg{kind: "ok", text: "namespace → " + name}
+					}
+				},
+			}))
+		case "Services":
+			ns := app.KubeNamespace
+			app.Push(NewResourceListScreen(ResourceAction{
+				Kind:      KindServices,
+				Namespace: ns,
+				Name:      "services",
+			}))
+		case "Ingress":
+			ns := app.KubeNamespace
+			app.Push(NewResourceListScreen(ResourceAction{
+				Kind:      KindIngress,
+				Namespace: ns,
+				Name:      "ingress",
+			}))
+		default:
+			s.status = v.Value + ": not yet implemented"
+		}
 		return s, nil
 	case components.PickerCancelMsg:
 		return nil, nil
+	case resourceActionStatusMsg:
+		s.status = theme.InfoCallout(v.kind, v.text)
+		return s, nil
 	}
 
 	var cmd tea.Cmd
