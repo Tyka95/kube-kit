@@ -41,8 +41,14 @@ func (s *PodsScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 
 	switch v := msg.(type) {
 	case components.PickerSelectedMsg:
-		s.status = v.Value + ": not yet implemented"
-		return s, nil
+		switch v.Value {
+		case "List Pods":
+			app.Push(NewPodListScreen(app.KubeNamespace))
+			return s, nil
+		default:
+			s.status = v.Value + ": not yet implemented"
+			return s, nil
+		}
 	case components.PickerCancelMsg:
 		return nil, nil
 	}
