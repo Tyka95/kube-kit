@@ -26,9 +26,11 @@ var (
 	Dim      = lipgloss.NewStyle().Foreground(Muted)
 	BoldText = lipgloss.NewStyle().Foreground(Primary).Bold(true)
 
-	BorderColor   = Muted
+	// Rules are explicitly accent-foreground so they remain visible across
+	// terminal themes where C_MUTED can wash out against a dark bg.
+	BorderColor   = Accent
 	BorderStyle   = lipgloss.NormalBorder()
-	HeaderBorder  = lipgloss.NewStyle().Foreground(Muted)
+	HeaderBorder  = lipgloss.NewStyle().Foreground(Accent)
 	HeaderSegment = lipgloss.NewStyle().Foreground(Muted)
 	HeaderValue   = lipgloss.NewStyle().Foreground(Primary).Bold(true)
 
