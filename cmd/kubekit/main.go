@@ -12,7 +12,7 @@ import (
 
 // Version is set at build time via -ldflags. The string after the `=` is
 // updated automatically by release-please from .release-please-manifest.json.
-var Version = "0.1.15" // x-release-please-version
+var Version = "0.1.16" // x-release-please-version
 
 func main() {
 	if len(os.Args) > 1 {
