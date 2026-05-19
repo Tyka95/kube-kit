@@ -84,8 +84,12 @@ brews:
     license: MIT
     install: |
       bin.install "kubekit"
+      # Keep the short `kube` alias for backward compatibility with the
+      # bash version, which exposed both names.
+      bin.install_symlink "kubekit" => "kube"
     test: |
       system "#{bin}/kubekit", "--version"
+      system "#{bin}/kube", "--version"
     dependencies:
       - name: kubectl
       - name: awscli
