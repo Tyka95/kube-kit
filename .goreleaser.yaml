@@ -85,6 +85,11 @@ release:
   github:
     owner: Tyka95
     name: kube-kit
-  draft: false
+  # GitHub's immutable-releases feature blocks asset uploads after a
+  # release is published. Goreleaser creates the release first and then
+  # uploads — which fails with 422 "Cannot upload assets to an immutable
+  # release". Drafts remain mutable, so we create the release as a draft
+  # here and the workflow flips it to published once uploads finish.
+  draft: true
   prerelease: auto
   name_template: "v{{ .Version }}"

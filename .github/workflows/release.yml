@@ -32,3 +32,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      # GitHub's immutable-releases feature blocks asset uploads once a
+      # release is published, so .goreleaser.yaml creates the release as
+      # a draft. Flip it to published now that all assets are uploaded.
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "${GITHUB_REF_NAME}" --draft=false --latest
