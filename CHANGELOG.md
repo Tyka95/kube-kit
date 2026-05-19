@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.15](https://github.com/Tyka95/kube-kit/compare/v0.1.14...v0.1.15) (2026-05-19)
+
+
+### Bug Fixes
+
+* **release:** route Homebrew tap commit through HOMEBREW_TAP_TOKEN ([151dae6](https://github.com/Tyka95/kube-kit/commit/151dae69680b65c86a30a0914c07505d8e154d24))
+* **release:** route Homebrew tap commit through HOMEBREW_TAP_TOKEN ([b756523](https://github.com/Tyka95/kube-kit/commit/b75652305244f6fe1427d3f909abecd5c14f747e))
+
 ## [0.1.14](https://github.com/Tyka95/kube-kit/compare/v0.1.13...v0.1.14) (2026-05-19)
 
 
