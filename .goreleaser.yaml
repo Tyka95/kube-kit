@@ -1,0 +1,90 @@
+# goreleaser config for kubekit.
+# Builds darwin/linux amd64+arm64 binaries, publishes a GitHub release,
+# and updates the Homebrew tap formula at Tyka95/homebrew-kube-kit.
+
+version: 2
+
+project_name: kubekit
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: kubekit
+    main: ./cmd/kubekit
+    binary: kubekit
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.Version={{.Version}}
+
+archives:
+  - id: kubekit
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_
+      {{- if eq .Os "darwin" }}macos{{ else }}{{ .Os }}{{ end }}_
+      {{- if eq .Arch "amd64" }}x86_64{{ else }}{{ .Arch }}{{ end }}
+    format: tar.gz
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  use: github
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: Bug Fixes
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: Refactors
+      regexp: '^.*?refactor(\([[:word:]]+\))??!?:.+$'
+      order: 2
+    - title: Other
+      order: 99
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - Merge pull request
+
+brews:
+  - name: kubekit
+    repository:
+      owner: Tyka95
+      name: homebrew-kube-kit
+      branch: main
+    homepage: https://github.com/Tyka95/kube-kit
+    description: Terminal UI for Kubernetes and AWS workflows.
+    license: MIT
+    install: |
+      bin.install "kubekit"
+    test: |
+      system "#{bin}/kubekit", "--version"
+    dependencies:
+      - name: kubectl
+      - name: awscli
+
+release:
+  github:
+    owner: Tyka95
+    name: kube-kit
+  draft: false
+  prerelease: auto
+  name_template: "v{{ .Version }}"

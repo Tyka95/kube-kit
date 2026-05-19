@@ -1,13 +1,13 @@
 {
   "packages": {
     ".": {
-      "release-type": "simple",
+      "release-type": "go",
       "bump-minor-pre-major": true,
       "bump-patch-for-minor-pre-major": true,
       "extra-files": [
         {
           "type": "generic",
-          "path": "kubekit.sh",
+          "path": "cmd/kubekit/main.go",
           "glob": false
         }
       ]

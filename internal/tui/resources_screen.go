@@ -1,0 +1,100 @@
+package tui
+
+import (
+	"context"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/Tyka95/kube-kit/internal/kctx"
+	"github.com/Tyka95/kube-kit/internal/tui/components/picker"
+	"github.com/Tyka95/kube-kit/internal/tui/state"
+	"github.com/Tyka95/kube-kit/internal/tui/theme"
+)
+
+// ResourcesScreen shows cluster-resource browsing actions.
+type ResourcesScreen struct {
+	picker picker.Picker
+	status string
+}
+
+// NewResourcesScreen constructs the Resources action menu.
+func NewResourcesScreen() *ResourcesScreen {
+	items := []picker.Item{
+		{Label: "Namespaces", Detail: "list all namespaces"},
+		{Label: "Services", Detail: "list services in namespace"},
+		{Label: "Ingress", Detail: "list ingress rules"},
+	}
+	return &ResourcesScreen{picker: picker.New("Resources", items, nil)}
+}
+
+func (s *ResourcesScreen) Init() tea.Cmd             { return nil }
+func (s *ResourcesScreen) Breadcrumb() string        { return "Resources" }
+func (s *ResourcesScreen) Position() (int, int)      { return s.picker.Position() }
+func (s *ResourcesScreen) KeyHints() []state.KeyHint {
+	return []state.KeyHint{{Key: "⏎", Action: "run"}, {Key: "?", Action: "help"}}
+}
+
+// Update routes messages to the picker and handles picker events.
+func (s *ResourcesScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
+	if ws, ok := msg.(tea.WindowSizeMsg); ok {
+		s.picker.SetSize(ws.Width, pickerBodyHeight(ws.Height))
+		return s, nil
+	}
+
+	switch v := msg.(type) {
+	case picker.PickerSelectedMsg:
+		switch v.Value {
+		case "Namespaces":
+			app.Push(NewResourceListScreen(ResourceAction{
+				Kind: KindNamespaces,
+				Name: "namespaces",
+				OnSelected: func(name string) tea.Cmd {
+					return func() tea.Msg {
+						ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+						defer cancel()
+						if err := kctx.SetNamespace(ctx, name); err != nil {
+							return resourceActionStatusMsg{kind: "error", text: "set ns failed: " + err.Error()}
+						}
+						return resourceActionStatusMsg{kind: "ok", text: "namespace → " + name}
+					}
+				},
+			}))
+		case "Services":
+			ns := app.KubeNamespace
+			app.Push(NewResourceListScreen(ResourceAction{
+				Kind:      KindServices,
+				Namespace: ns,
+				Name:      "services",
+			}))
+		case "Ingress":
+			ns := app.KubeNamespace
+			app.Push(NewResourceListScreen(ResourceAction{
+				Kind:      KindIngress,
+				Namespace: ns,
+				Name:      "ingress",
+			}))
+		default:
+			s.status = v.Value + ": not yet implemented"
+		}
+		return s, nil
+	case picker.PickerCancelMsg:
+		return nil, nil
+	case resourceActionStatusMsg:
+		s.status = theme.InfoCallout(v.kind, v.text)
+		return s, nil
+	}
+
+	var cmd tea.Cmd
+	s.picker, cmd = s.picker.Update(msg)
+	return s, cmd
+}
+
+// View renders the resources screen body.
+func (s *ResourcesScreen) View(app *App) string {
+	s.picker.SetSize(app.Width, pickerBodyHeight(app.Height))
+	if s.status != "" {
+		return theme.InfoCallout("warn", s.status) + "\n\n" + s.picker.View()
+	}
+	return s.picker.View()
+}
