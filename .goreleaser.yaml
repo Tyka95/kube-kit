@@ -66,6 +66,11 @@ changelog:
 
 brews:
   - name: kubekit
+    # Write the formula to Formula/kubekit.rb, the conventional Homebrew
+    # tap layout. Homebrew prefers Formula/ over the repo root when both
+    # exist, so writing here keeps a single canonical location and stops
+    # silent drift between root and Formula/.
+    directory: Formula
     repository:
       owner: Tyka95
       name: homebrew-kube-kit
