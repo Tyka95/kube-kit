@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.17](https://github.com/Tyka95/kube-kit/compare/v0.1.16...v0.1.17) (2026-05-19)
+
+
+### Features
+
+* **release:** install `kube` symlink alongside `kubekit` ([22837c2](https://github.com/Tyka95/kube-kit/commit/22837c2a4ae03b083430838372f82be90233e25f))
+* **release:** install `kube` symlink alongside `kubekit` ([ad2aea0](https://github.com/Tyka95/kube-kit/commit/ad2aea07f4b55df455e55eb3fb7672c8d3b4d67b))
+
 ## [0.1.16](https://github.com/Tyka95/kube-kit/compare/v0.1.15...v0.1.16) (2026-05-19)
 
 
