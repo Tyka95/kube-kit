@@ -248,6 +248,10 @@ func (s *DatabaseScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 		s.tunnel = m.t
 		s.tunnelMsg = fmt.Sprintf("tunnel active: localhost:%d → %s:%d",
 			m.localPort, m.host, m.port)
+		// Register with the app so Cleanup() can close the tunnel on any
+		// exit path (Ctrl+C, signal, panic). Without this, quitting orphans
+		// the kubectl port-forward AND the socat pod in the cluster.
+		app.AddTunnel(m.t)
 		// Stay on this screen so the user sees the active tunnel.
 		return s, nil
 
@@ -265,6 +269,7 @@ func (s *DatabaseScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 
 	case picker.PickerCancelMsg:
 		if s.tunnel != nil {
+			app.RemoveTunnel(s.tunnel)
 			_ = s.tunnel.Close()
 			s.tunnel = nil
 			s.tunnelMsg = ""
