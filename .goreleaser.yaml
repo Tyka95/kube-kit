@@ -70,6 +70,10 @@ brews:
       owner: Tyka95
       name: homebrew-kube-kit
       branch: main
+      # GITHUB_TOKEN can only push to this repo. The tap lives in a
+      # separate repo, so route the brew commit through a PAT with
+      # contents:write on Tyka95/homebrew-kube-kit.
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     homepage: https://github.com/Tyka95/kube-kit
     description: Terminal UI for Kubernetes and AWS workflows.
     license: MIT
