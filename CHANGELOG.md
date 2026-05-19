@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.18](https://github.com/Tyka95/kube-kit/compare/v0.1.17...v0.1.18) (2026-05-19)
+
+
+### Features
+
+* **tui:** prompt for local port before opening DB tunnel ([0ab2e1f](https://github.com/Tyka95/kube-kit/commit/0ab2e1f6b50e03218157e27026ea1d2e78d41611))
+
 ## [0.1.17](https://github.com/Tyka95/kube-kit/compare/v0.1.16...v0.1.17) (2026-05-19)
 
 
