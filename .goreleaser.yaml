@@ -91,8 +91,16 @@ brews:
       system "#{bin}/kubekit", "--version"
       system "#{bin}/kube", "--version"
     dependencies:
+      # kubectl is the only hard dependency — kubekit shells out to it for
+      # context, pods, port-forward, etc.
       - name: kubectl
-      - name: awscli
+      # NOTE: awscli is intentionally NOT declared as a Homebrew dependency.
+      # kubekit shells out to whatever `aws` is on PATH, and Homebrew's
+      # awscli formula pulls in python@3.14 which currently breaks itself
+      # against the system libexpat (dlopen pyexpat → symbol not found).
+      # Forcing a brew awscli install on every kubekit upgrade re-breaks
+      # the user's `aws` binary. Users install awscli however they prefer;
+      # AWS's official bundled v2 installer is the recommended path.
 
 release:
   github:
