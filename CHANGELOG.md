@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.19](https://github.com/Tyka95/kube-kit/compare/v0.1.18...v0.1.19) (2026-05-20)
+
+
+### Bug Fixes
+
+* **tui:** tear down DB tunnel on every exit path ([ad2e67d](https://github.com/Tyka95/kube-kit/commit/ad2e67d16247ec0198e9027097683d0d92c250cf))
+* **tui:** tear down DB tunnel on every exit path ([49e0a12](https://github.com/Tyka95/kube-kit/commit/49e0a122748d6b5889bf9eb7d7b4ac605244b181))
+
 ## [0.1.18](https://github.com/Tyka95/kube-kit/compare/v0.1.17...v0.1.18) (2026-05-19)
 
 
