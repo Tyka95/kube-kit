@@ -6,6 +6,7 @@ package tui
 import (
 	"context"
 	"strings"
+	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -18,6 +19,7 @@ import (
 	"github.com/Tyka95/kube-kit/internal/tui/components"
 	"github.com/Tyka95/kube-kit/internal/tui/components/picker"
 	"github.com/Tyka95/kube-kit/internal/tui/state"
+	"github.com/Tyka95/kube-kit/internal/tunnel"
 )
 
 // Screen is implemented by every screen (main menu, database, aws, …).
@@ -42,6 +44,12 @@ type App struct {
 	Discover  *rds.Discoverer
 	Commands  *commands.Registry
 
+	// Active tunnels — tracked here (not on the screen) so Cleanup can close
+	// them on ANY exit path: Ctrl+C, :quit, SIGTERM, panic. Without this,
+	// quitting the TUI orphans the kubectl port-forward subprocess locally
+	// AND the socat pod in the cluster.
+	tunnelMu sync.Mutex
+	tunnels  []*tunnel.Tunnel
 }
 
 // NewApp constructs the app at the main menu.
@@ -283,4 +291,46 @@ type PositionProvider interface {
 
 // QuitMsg is broadcast when the app should exit.
 type QuitMsg struct{}
+
+// AddTunnel registers an active tunnel for cleanup on exit. Screens call
+// this immediately after a successful tunnel.Open so Ctrl+C / SIGTERM /
+// panic-recovery paths can all tear it down. Idempotent for nil.
+func (a *App) AddTunnel(t *tunnel.Tunnel) {
+	if t == nil {
+		return
+	}
+	a.tunnelMu.Lock()
+	defer a.tunnelMu.Unlock()
+	a.tunnels = append(a.tunnels, t)
+}
+
+// RemoveTunnel deregisters a tunnel that the caller has already closed.
+// Called from the Database screen's normal-flow disconnect so Cleanup
+// doesn't try to close it again (which would just be a noop, but keeps
+// the slice from growing across multiple open/close cycles).
+func (a *App) RemoveTunnel(t *tunnel.Tunnel) {
+	if t == nil {
+		return
+	}
+	a.tunnelMu.Lock()
+	defer a.tunnelMu.Unlock()
+	for i, x := range a.tunnels {
+		if x == t {
+			a.tunnels = append(a.tunnels[:i], a.tunnels[i+1:]...)
+			return
+		}
+	}
+}
+
+// Cleanup closes all active tunnels. Safe to call multiple times — each
+// tunnel.Close is idempotent. main.go defers this so it fires on every
+// exit path (graceful quit, Ctrl+C, signal, error return).
+func (a *App) Cleanup() {
+	a.tunnelMu.Lock()
+	defer a.tunnelMu.Unlock()
+	for _, t := range a.tunnels {
+		_ = t.Close()
+	}
+	a.tunnels = nil
+}
 

@@ -4,6 +4,8 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -27,7 +29,28 @@ func main() {
 		}
 	}
 
-	p := tea.NewProgram(tui.NewApp(), tea.WithAltScreen(), tea.WithMouseCellMotion())
+	app := tui.NewApp()
+
+	// defer Cleanup so any active DB tunnels are torn down on every exit
+	// path: graceful quit, Ctrl+C inside the TUI, signal received, error
+	// return, even panic. Without this, the local kubectl port-forward
+	// and the socat pod in the cluster outlive the process.
+	defer app.Cleanup()
+
+	p := tea.NewProgram(app, tea.WithAltScreen(), tea.WithMouseCellMotion())
+
+	// Catch SIGTERM / SIGHUP (terminal closed, kill <pid>) and ask the
+	// program to quit gracefully. bubbletea already handles SIGINT
+	// (Ctrl+C) by translating it to a tea.KeyMsg, which our App.Update
+	// converts to tea.Quit — so p.Run() returns and the deferred Cleanup
+	// fires. SIGTERM/SIGHUP need an explicit bridge here.
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGHUP)
+	go func() {
+		<-sigCh
+		p.Quit()
+	}()
+
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "kubekit: %v\n", err)
 		os.Exit(1)
