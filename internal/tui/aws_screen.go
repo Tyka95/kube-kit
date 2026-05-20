@@ -67,10 +67,15 @@ func (s *AWSScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 			app.Push(NewSSOProfilePickerScreen())
 			return s, nil
 		case "EKS Connect":
-			s.status = "EKS Connect: not yet implemented"
+			// Three-phase flow inside one screen: pick profile → pick
+			// cluster → aws eks update-kubeconfig.
+			s.status = ""
+			app.Push(NewEKSConnectScreen())
 			return s, nil
 		case "S3 Buckets":
-			s.status = "S3 Buckets: not yet implemented"
+			// Two-phase flow: pick profile → list buckets via aws s3api.
+			s.status = ""
+			app.Push(NewS3BucketsScreen())
 			return s, nil
 		}
 		return s, nil
