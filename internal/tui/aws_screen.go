@@ -1,13 +1,6 @@
 package tui
 
 import (
-	"bytes"
-	"context"
-	"fmt"
-	"os/exec"
-	"strings"
-	"time"
-
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/Tyka95/kube-kit/internal/tui/components/picker"
@@ -66,18 +59,12 @@ func (s *AWSScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 	case picker.PickerSelectedMsg:
 		switch m.Value {
 		case "SSO Login":
-			// Push a dedicated SSO login screen that runs aws sso login with
-			// --no-browser, parses the device-code URL and verification code
-			// from its stdout, and renders them inside the kubekit chrome.
-			// The TUI stays visible the whole time — the user opens the URL
-			// in any browser and confirms the code there.
-			profile, err := firstAvailableProfile()
-			if err != nil {
-				s.status = "login failed: " + err.Error()
-				return s, nil
-			}
+			// Push the SSO profile picker. Picking a profile then pushes
+			// the actual SSO login screen — the auto-pick that used to
+			// silently log into the first profile (almost always `stage`)
+			// is gone.
 			s.status = ""
-			app.Push(NewSSOLoginScreen(profile, app.Session))
+			app.Push(NewSSOProfilePickerScreen())
 			return s, nil
 		case "EKS Connect":
 			s.status = "EKS Connect: not yet implemented"
@@ -111,26 +98,3 @@ func (s *AWSScreen) View(app *App) string {
 	return s.picker.View()
 }
 
-// firstAvailableProfile returns the first profile from `aws configure list-profiles`.
-//
-// TODO: replace with an inline profile-picker dialog (v1.1).
-func firstAvailableProfile() (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-
-	var stdout, stderr bytes.Buffer
-	cmd := exec.CommandContext(ctx, "aws", "configure", "list-profiles")
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("could not list profiles: %v", err)
-	}
-
-	lines := strings.Split(strings.TrimSpace(stdout.String()), "\n")
-	for _, l := range lines {
-		if l = strings.TrimSpace(l); l != "" {
-			return l, nil
-		}
-	}
-	return "", fmt.Errorf("no profiles found in ~/.aws/config")
-}
