@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.1.20](https://github.com/Tyka95/kube-kit/compare/v0.1.19...v0.1.20) (2026-05-22)
+
+
+### Features
+
+* **tui:** Additional improvements and cleanup ([65971b9](https://github.com/Tyka95/kube-kit/commit/65971b95eae17ab3d6d19d5ec944eb5792772c8f))
+* **tui:** implement EKS Connect and S3 Buckets AWS submenu actions ([ea7ce62](https://github.com/Tyka95/kube-kit/commit/ea7ce6205aee85db2893f61b62bb3a3e9f4c46b7))
+* **tui:** pick AWS profile before SSO login instead of auto-picking first ([c6a49d8](https://github.com/Tyka95/kube-kit/commit/c6a49d8c0e00e642a79d958c4c80c77136ec017e))
+
+
+### Bug Fixes
+
+* **release:** drop awscli from Homebrew formula dependencies ([bce1088](https://github.com/Tyka95/kube-kit/commit/bce1088b76ae456c91978c0f50267493504f53e2))
+
 ## [0.1.19](https://github.com/Tyka95/kube-kit/compare/v0.1.18...v0.1.19) (2026-05-20)
 
 
