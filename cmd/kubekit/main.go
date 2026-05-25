@@ -55,4 +55,9 @@ func main() {
 		fmt.Fprintf(os.Stderr, "kubekit: %v\n", err)
 		os.Exit(1)
 	}
+
+	// Goodbye banner. Runs after bubbletea has released the alt-screen
+	// and after defer app.Cleanup() has closed any open tunnels, so the
+	// message appears in the user's normal terminal scrollback.
+	fmt.Println("kubekit — see you soon 👋")
 }

@@ -3,6 +3,7 @@ package tui
 import (
 	"bytes"
 	"context"
+	"os"
 	"os/exec"
 	"regexp"
 	"runtime"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/creack/pty"
 
 	"github.com/Tyka95/kube-kit/internal/awssession"
 	"github.com/Tyka95/kube-kit/internal/tui/components"
@@ -31,6 +33,7 @@ type SSOLoginScreen struct {
 	spinner components.Spinner
 
 	cmd    *exec.Cmd
+	ptmx   *os.File // PTY master; nil if PTY allocation failed and we fell back to pipes
 	output *syncBuffer
 
 	url            string
@@ -112,14 +115,52 @@ func (s *SSOLoginScreen) Position() (int, int) { return 0, 0 }
 // blocking wait on the subprocess (returns ssoCompletedMsg when done).
 func (s *SSOLoginScreen) Init() tea.Cmd {
 	s.cmd = exec.Command("aws", "sso", "login", "--no-browser", "--profile", s.profile)
-	s.cmd.Stdout = s.output
-	s.cmd.Stderr = s.output
-
-	if err := s.cmd.Start(); err != nil {
-		s.completed = true
-		s.finalKind = "error"
-		s.finalMsg = "failed to start aws sso login: " + err.Error()
-		return nil
+	// AWS CLI v2 is a PyInstaller-frozen Python binary. When stdout
+	// isn't a TTY it switches to block-buffered output AND silences
+	// the prompt_toolkit-based SSO prompt entirely, so piping stdout
+	// into a Go io.Writer gives us nothing until the process exits.
+	// PYTHONUNBUFFERED has no effect at this level.
+	//
+	// Fix: allocate a pseudo-terminal so aws thinks it's attached to
+	// a real shell and prints the URL/code immediately. The PTY master
+	// is read in a goroutine into our existing syncBuffer, so the rest
+	// of the screen (regex scanning, browser open, clipboard) needs no
+	// changes.
+	// Pre-set a sane PTY size BEFORE starting. A 0×0 PTY makes
+	// prompt_toolkit (used by aws CLI for SSO prompts) emit nothing,
+	// which is the entire reason the screen used to sit silent.
+	ptmx, err := pty.StartWithSize(s.cmd, &pty.Winsize{Rows: 40, Cols: 120})
+	if err != nil {
+		// PTY allocation failed (rare — usually only on locked-down
+		// environments). Fall back to pipes; output likely won't be
+		// visible, but we won't crash.
+		s.cmd.Stdout = s.output
+		s.cmd.Stderr = s.output
+		s.cmd.Env = append(os.Environ(), "PYTHONUNBUFFERED=1")
+		if startErr := s.cmd.Start(); startErr != nil {
+			s.completed = true
+			s.finalKind = "error"
+			s.finalMsg = "failed to start aws sso login: " + startErr.Error()
+			return nil
+		}
+	} else {
+		s.ptmx = ptmx
+		// Drain the PTY master into our buffer. io.Copy returns when
+		// the slave side closes (i.e. aws exits) — at which point the
+		// waitForCompletion goroutine will already be observing the
+		// process exit.
+		go func() {
+			buf := make([]byte, 4096)
+			for {
+				n, rerr := ptmx.Read(buf)
+				if n > 0 {
+					_, _ = s.output.Write(buf[:n])
+				}
+				if rerr != nil {
+					return
+				}
+			}
+		}()
 	}
 
 	return tea.Batch(
@@ -262,6 +303,9 @@ func (s *SSOLoginScreen) cancelAndExit() {
 		return
 	}
 	_ = s.cmd.Process.Kill()
+	if s.ptmx != nil {
+		_ = s.ptmx.Close()
+	}
 }
 
 func (s *SSOLoginScreen) View(app *App) string {

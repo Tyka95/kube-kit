@@ -79,21 +79,17 @@ func (s *PodsScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 			return s, nil
 		case "Inspect":
 			ns := app.KubeNamespace
+			// Inline renderer instead of tea.ExecProcess+less. Old flow
+			// suspended bubbletea entirely so the user lost the header,
+			// breadcrumb, footer and key hints — only way out was less's
+			// `q` convention. New screen keeps the chrome and uses the
+			// viewport bubble for scrolling, with esc/q both exiting.
 			app.Push(NewPodActionScreen(ns, PodAction{
 				Name: "inspect",
 				OnSelected: func(pod string) tea.Cmd {
-					// Buffer kubectl output to a temp file then less it. Piping
-					// directly (kubectl | less) leaves less's stdin attached
-					// to the pipe so 'q' to exit doesn't reach less under
-					// tea.ExecProcess.
-					cmd := exec.Command("sh", "-c",
-						`f=$(mktemp) && kubectl describe pod `+shEscape(pod)+` -n `+shEscape(ns)+` > "$f" 2>&1 && less -R "$f"; rm -f "$f"`)
-					return tea.ExecProcess(cmd, func(err error) tea.Msg {
-						if err != nil {
-							return podActionStatusMsg{kind: "error", text: "kubectl describe: " + err.Error()}
-						}
-						return podActionStatusMsg{kind: "info", text: "inspect closed for " + pod}
-					})
+					return func() tea.Msg {
+						return pushInspectMsg{pod: pod, namespace: ns}
+					}
 				},
 			}))
 			return s, nil

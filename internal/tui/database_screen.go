@@ -11,10 +11,11 @@ import (
 	"github.com/Tyka95/kube-kit/internal/config"
 	"github.com/Tyka95/kube-kit/internal/kctx"
 	"github.com/Tyka95/kube-kit/internal/rds"
-	"github.com/Tyka95/kube-kit/internal/tunnel"
+	"github.com/Tyka95/kube-kit/internal/tui/components"
 	"github.com/Tyka95/kube-kit/internal/tui/components/picker"
 	"github.com/Tyka95/kube-kit/internal/tui/state"
 	"github.com/Tyka95/kube-kit/internal/tui/theme"
+	"github.com/Tyka95/kube-kit/internal/tunnel"
 )
 
 // dbDataLoadedMsg is dispatched when the async discovery completes.
@@ -52,6 +53,16 @@ type DatabaseScreen struct {
 	status    string             // "Discovering…", error, identity line, or mismatch warning
 	tunnel    *tunnel.Tunnel
 	tunnelMsg string // status line shown while a tunnel is active
+	spinner   components.Spinner
+
+	// Transition states. tunnelOpening: time between port-submit and the
+	// tunnel coming up (kubectl run + wait + port-forward = several
+	// seconds). tunnelClosing: time between Esc-on-active-tunnel and the
+	// pod actually being deleted. Both render a spinner instead of
+	// flashing the picker back into view.
+	tunnelOpening bool
+	tunnelClosing bool
+	transitionMsg string // "opening tunnel to staging-aurora…" / "closing tunnel…"
 
 	// Local-port prompt state. Activated after the user picks an endpoint;
 	// blocks until the user submits a port (or Esc to cancel). Pending* hold
@@ -72,13 +83,14 @@ func NewDatabaseScreen(cfg *config.Config, session *awssession.Session, discover
 		session:  session,
 		discover: discover,
 		picker:   picker.New("Database", nil, []picker.Bind{{Key: "r", Action: "refresh"}}),
+		spinner:  components.NewSpinner(),
 		status:   "Discovering…",
 	}
 }
 
 // Init fires the async session-ensure + RDS-discover call.
 func (s *DatabaseScreen) Init() tea.Cmd {
-	return func() tea.Msg {
+	return tea.Batch(s.spinner.Start(), func() tea.Msg {
 		ctx := context.Background()
 
 		snap, err := s.session.Ensure(ctx)
@@ -88,7 +100,7 @@ func (s *DatabaseScreen) Init() tea.Cmd {
 
 		endpoints, discErr := s.discover.Discover(ctx, snap.Profile, snap.Region, snap.Account)
 		return dbDataLoadedMsg{snap: snap, endpoints: endpoints, err: discErr}
-	}
+	})
 }
 
 // Breadcrumb returns the name pushed onto the trail.
@@ -245,6 +257,8 @@ func (s *DatabaseScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 		return s, nil
 
 	case dbTunnelOpenMsg:
+		s.tunnelOpening = false
+		s.transitionMsg = ""
 		s.tunnel = m.t
 		s.tunnelMsg = fmt.Sprintf("tunnel active: localhost:%d → %s:%d",
 			m.localPort, m.host, m.port)
@@ -256,7 +270,16 @@ func (s *DatabaseScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 		return s, nil
 
 	case dbTunnelErrMsg:
+		s.tunnelOpening = false
+		s.transitionMsg = ""
 		s.status = "tunnel error: " + m.err.Error()
+		return s, nil
+
+	case dbTunnelClosedMsg:
+		s.tunnelClosing = false
+		s.transitionMsg = ""
+		s.tunnel = nil
+		s.tunnelMsg = ""
 		return s, nil
 
 	case picker.PickerActionMsg:
@@ -268,11 +291,21 @@ func (s *DatabaseScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 		return s, nil
 
 	case picker.PickerCancelMsg:
+		// If a tunnel is up, Esc means "disconnect" — switch to the
+		// closing-spinner view and run Close() async so the UI stays
+		// responsive while kubectl delete pod runs.
 		if s.tunnel != nil {
-			app.RemoveTunnel(s.tunnel)
-			_ = s.tunnel.Close()
-			s.tunnel = nil
-			s.tunnelMsg = ""
+			t := s.tunnel
+			app.RemoveTunnel(t)
+			s.tunnelClosing = true
+			s.transitionMsg = "closing tunnel…"
+			return s, func() tea.Msg {
+				_ = t.Close()
+				return dbTunnelClosedMsg{}
+			}
+		}
+		// Don't pop while a tunnel is opening — would leave an orphan.
+		if s.tunnelOpening {
 			return s, nil
 		}
 		// Self-pop.
@@ -280,6 +313,41 @@ func (s *DatabaseScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 
 	case tea.WindowSizeMsg:
 		s.picker.SetSize(m.Width, pickerBodyHeight(m.Height))
+		return s, nil
+
+	case tea.KeyMsg:
+		// Esc in tunnel-active or tunnel-opening states must work even
+		// though we no longer forward keys to the picker in those modes.
+		// Forwarding was disabled to stop invisible scroll behind the
+		// transition view, but that also blocked PickerCancelMsg — the
+		// usual path for Esc-as-disconnect. Handle it directly here.
+		if m.String() == "esc" {
+			if s.tunnel != nil {
+				t := s.tunnel
+				app.RemoveTunnel(t)
+				s.tunnelClosing = true
+				s.transitionMsg = "closing tunnel…"
+				return s, func() tea.Msg {
+					_ = t.Close()
+					return dbTunnelClosedMsg{}
+				}
+			}
+			if s.tunnelOpening {
+				// Don't pop while opening — would leave an orphan pod.
+				return s, nil
+			}
+		}
+	}
+
+	// Spinner tick passes through.
+	if cmd, handled := s.spinner.Update(msg); handled {
+		return s, cmd
+	}
+
+	// While opening/closing/prompting/tunnel-active, don't forward keys
+	// to the picker — would scroll the list invisibly behind the
+	// transition view.
+	if s.tunnelOpening || s.tunnelClosing || s.portPrompt || s.tunnel != nil {
 		return s, nil
 	}
 
@@ -307,7 +375,12 @@ func (s *DatabaseScreen) handlePortPromptKey(km tea.KeyMsg) (Screen, tea.Cmd) {
 			port = p
 		}
 		host, remote, ns := s.pendingHost, s.pendingPort, s.pendingNS
+		label := s.pendingLabel
 		s.resetPortPrompt()
+		// Transition into the "opening" state so the View renders a
+		// spinner instead of briefly flashing the picker back.
+		s.tunnelOpening = true
+		s.transitionMsg = fmt.Sprintf("opening tunnel to %s (localhost:%d)…", label, port)
 		return s, func() tea.Msg {
 			t, err := tunnel.Open(context.Background(), tunnel.Config{
 				Namespace:  ns,
@@ -349,6 +422,18 @@ func (s *DatabaseScreen) resetPortPrompt() {
 // View renders the database screen body.
 func (s *DatabaseScreen) View(app *App) string {
 	s.picker.SetSize(app.Width, pickerBodyHeight(app.Height))
+
+	// Tunnel opening — spinner while kubectl run / wait / port-forward
+	// is in flight. Without this the picker briefly flashes back into
+	// view between port-submit and dbTunnelOpenMsg.
+	if s.tunnelOpening {
+		return "  " + s.spinner.View() + "  " + theme.Dim.Render(s.transitionMsg)
+	}
+
+	// Tunnel closing — spinner while kubectl delete pod / kill PF runs.
+	if s.tunnelClosing {
+		return "  " + s.spinner.View() + "  " + theme.Dim.Render(s.transitionMsg)
+	}
 
 	// Tunnel-active view: show connection info instead of the picker.
 	if s.tunnel != nil {
@@ -402,3 +487,8 @@ type dbTunnelOpenMsg struct {
 type dbTunnelErrMsg struct {
 	err error
 }
+
+// dbTunnelClosedMsg fires after the async close completes (kubectl
+// delete pod can take a few seconds). Triggers a flip from the closing
+// spinner back to the endpoint picker.
+type dbTunnelClosedMsg struct{}
