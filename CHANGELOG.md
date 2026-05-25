@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.1.21](https://github.com/Tyka95/kube-kit/compare/v0.1.20...v0.1.21) (2026-05-25)
+
+
+### Features
+
+* **tui:** polish SSO, DB tunnel, and pod inspect flows ([b5d321d](https://github.com/Tyka95/kube-kit/commit/b5d321d1b94d45cae45fa0d144a63c2d84be1065))
+* **tui:** polish SSO/DB/Inspect flows and clean up exit UX ([c517dbf](https://github.com/Tyka95/kube-kit/commit/c517dbf07674840d9039a229317bac12533e54bb))
+
+
+### Bug Fixes
+
+* **tui:** surface aws CLI output while waiting for SSO URL ([63e2df6](https://github.com/Tyka95/kube-kit/commit/63e2df60504a03d5ba7605996ef9f12c3eadd9d2))
+* updated image ([a32ef62](https://github.com/Tyka95/kube-kit/commit/a32ef62e56a9b2d1d318ec597f9f663d612c98a8))
+
 ## [0.1.20](https://github.com/Tyka95/kube-kit/compare/v0.1.19...v0.1.20) (2026-05-22)
 
 
