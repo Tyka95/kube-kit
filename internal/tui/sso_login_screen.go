@@ -280,6 +280,15 @@ func (s *SSOLoginScreen) View(app *App) string {
 
 	if s.url == "" {
 		b.WriteString("  " + s.spinner.View() + "  " + theme.Dim.Render("starting aws sso login…"))
+		// Surface raw aws CLI output (stderr/stdout) while we wait, so
+		// failures like the python@3.14 pyexpat dlopen error are visible
+		// instead of sitting under a spinner forever.
+		if raw := strings.TrimSpace(s.output.String()); raw != "" {
+			b.WriteString("\n\n")
+			for _, line := range strings.Split(raw, "\n") {
+				b.WriteString("  " + theme.Dim.Render(line) + "\n")
+			}
+		}
 		return b.String()
 	}
 
