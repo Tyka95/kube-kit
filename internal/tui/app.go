@@ -154,10 +154,32 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// fall through so the active screen sees the resize too.
 	case tea.KeyMsg:
 		if m.String() == "ctrl+c" {
+			// If a DB tunnel is up, Ctrl+C means "disconnect this tunnel"
+			// — same intent as in a shell after `kubectl port-forward`.
+			// Route it to the active screen as an Esc-equivalent so its
+			// own close-with-spinner flow runs. Only quit the whole app
+			// when there's no tunnel to disconnect.
+			if len(a.tunnels) > 0 {
+				escMsg := tea.KeyMsg{Type: tea.KeyEsc}
+				cur, cmd := a.Current().Update(escMsg, a)
+				if cur != nil {
+					a.screenStack[len(a.screenStack)-1] = cur
+				}
+				return a, cmd
+			}
 			return a, tea.Quit
 		}
 	case QuitMsg:
 		return a, tea.Quit
+	case pushInspectMsg:
+		// Pop the action picker we came from so esc-from-inspect lands
+		// directly on the pod-action menu, not back on the same picker.
+		a.Pop()
+		a.Push(NewPodInspectScreen(m.pod, m.namespace))
+		if initCmd := a.Current().Init(); initCmd != nil {
+			return a, initCmd
+		}
+		return a, nil
 	case picker.PickerHelpMsg:
 		// Any screen's '?' lands here. Push the help overlay seeded with the
 		// current screen's KeyHints so it can show them.
@@ -291,6 +313,15 @@ type PositionProvider interface {
 
 // QuitMsg is broadcast when the app should exit.
 type QuitMsg struct{}
+
+// pushInspectMsg is emitted by the Pods screen when the user picks a
+// pod under the Inspect action. App.Update catches it here and pushes
+// the PodInspectScreen — done at this layer because the leaf callback
+// inside PodActionScreen has no reference to *App.
+type pushInspectMsg struct {
+	pod       string
+	namespace string
+}
 
 // AddTunnel registers an active tunnel for cleanup on exit. Screens call
 // this immediately after a successful tunnel.Open so Ctrl+C / SIGTERM /

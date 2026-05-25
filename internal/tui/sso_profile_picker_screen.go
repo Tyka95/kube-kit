@@ -87,12 +87,14 @@ func (s *SSOProfilePickerScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd)
 		return s, nil
 
 	case picker.PickerSelectedMsg:
-		// Pop ourselves off and push the SSO login screen with the chosen
-		// profile. Pop-then-push keeps the back-trail clean: esc from the
-		// SSO screen returns to the AWS submenu, not back to this picker.
-		app.Pop()
+		// Push the SSO login screen with the chosen profile. We do NOT
+		// pop ourselves first: app.Update only fires Init() on the new
+		// top screen when postLen > preLen. A pop+push in the same tick
+		// nets to zero stack delta, Init() never fires, the SSO screen
+		// renders its spinner but no subprocess gets spawned. Esc from
+		// the SSO screen returns to this picker, then esc again to AWS.
 		app.Push(NewSSOLoginScreen(m.Value, app.Session))
-		return app.Current(), nil
+		return s, nil
 
 	case picker.PickerCancelMsg:
 		return nil, nil
