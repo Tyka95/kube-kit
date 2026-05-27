@@ -19,6 +19,7 @@ import (
 	"github.com/Tyka95/kube-kit/internal/tui/components"
 	"github.com/Tyka95/kube-kit/internal/tui/components/picker"
 	"github.com/Tyka95/kube-kit/internal/tui/state"
+	"github.com/Tyka95/kube-kit/internal/tui/theme"
 	"github.com/Tyka95/kube-kit/internal/tunnel"
 )
 
@@ -153,6 +154,17 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.Height = m.Height
 		// fall through so the active screen sees the resize too.
 	case tea.KeyMsg:
+		// If the mismatch callout is active and the user presses 'a',
+		// switch the AWS session to the suggested profile and revalidate.
+		// Done before forwarding to the active screen so the keystroke
+		// is unambiguous — screens never see 'a' while the callout is
+		// up. Once accounts match, SuggestedAWSProfile clears and 'a'
+		// flows through to screens normally.
+		if m.String() == "a" && a.SuggestedAWSProfile != "" {
+			a.Session.SetProfile(a.SuggestedAWSProfile)
+			a.SuggestedAWSProfile = ""
+			return a, a.validateAWSSession(true)
+		}
 		if m.String() == "ctrl+c" {
 			// If a DB tunnel is up, Ctrl+C means "disconnect this tunnel"
 			// — same intent as in a shell after `kubectl port-forward`.
@@ -226,6 +238,24 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		default:
 			a.AWSStatus = state.AWSUnknown
 		}
+		// If the AWS session's account doesn't match the kubectl
+		// context's account, see if ~/.aws/config has a profile whose
+		// sso_account_id matches the cluster — if so, expose it as a
+		// one-key 'switch' via the header callout. Cleared whenever
+		// the accounts match (no callout needed when reconciled).
+		a.SuggestedAWSProfile = ""
+		if id.CtxAccount != "" && id.Account != "" && id.CtxAccount != id.Account {
+			ctxAccount := id.CtxAccount
+			return a, func() tea.Msg {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				p := awssession.ProfileForAccount(ctx, ctxAccount)
+				return suggestedProfileMsg{profile: p}
+			}
+		}
+		return a, nil
+	case suggestedProfileMsg:
+		a.SuggestedAWSProfile = m.profile
 		return a, nil
 	}
 
@@ -276,25 +306,44 @@ func (a *App) View() string {
 		Position: a.currentPickerPosition(),
 	})
 
+	// Mismatch callout — rendered between breadcrumb and body when the
+	// active AWS session targets a different account than the kube
+	// context AND ~/.aws/config has a profile that would reconcile it.
+	// One keypress (`a`) flips the session.
+	var callout string
+	if a.SuggestedAWSProfile != "" {
+		callout = theme.InfoCallout("warn", "cluster needs account "+
+			a.AWSCtxAccount+"  ·  press 'a' to switch profile to "+
+			a.SuggestedAWSProfile)
+	}
+
 	// Compute how many rows the body actually occupies, then pad with blank
 	// lines so the footer is pinned to the bottom of the terminal regardless
 	// of how short the body is (e.g. 'loading pods…' that's only 1 line).
 	headerRows := strings.Count(header, "\n") + 1
 	breadcrumbRows := 1
 	footerRows := strings.Count(footer, "\n") + 1
-	// Layout: header + blank + breadcrumb + blank + body + (pad) + footer.
-	usedFixed := headerRows + 1 + breadcrumbRows + 1 + footerRows
+	calloutRows := 0
+	if callout != "" {
+		calloutRows = strings.Count(callout, "\n") + 1 + 1 // + trailing blank
+	}
+	// Layout: header + blank + breadcrumb + (callout + blank)? + blank + body + (pad) + footer.
+	usedFixed := headerRows + 1 + breadcrumbRows + calloutRows + 1 + footerRows
 	bodyLines := strings.Count(body, "\n")
-	// Each \n in body separates lines; the final line has no \n trailing only
-	// if body ends with one. Normalize: body lines = count(\n) (trailing
-	// newlines are OK; we treat each as a row).
 	pad := a.Height - usedFixed - bodyLines
 	if pad < 0 {
 		pad = 0
 	}
 	padding := strings.Repeat("\n", pad)
 
-	return header + "\n" + breadcrumb + "\n\n" + body + padding + footer
+	out := header + "\n" + breadcrumb + "\n"
+	if callout != "" {
+		out += callout + "\n\n"
+	} else {
+		out += "\n"
+	}
+	out += body + padding + footer
+	return out
 }
 
 // currentPickerPosition asks the active screen if it has a position to show.
@@ -313,6 +362,13 @@ type PositionProvider interface {
 
 // QuitMsg is broadcast when the app should exit.
 type QuitMsg struct{}
+
+// suggestedProfileMsg carries the result of the async ~/.aws/config
+// scan triggered after a mismatch is detected. Empty Profile means no
+// matching profile was found — the callout stays hidden.
+type suggestedProfileMsg struct {
+	profile string
+}
 
 // pushInspectMsg is emitted by the Pods screen when the user picks a
 // pod under the Inspect action. App.Update catches it here and pushes

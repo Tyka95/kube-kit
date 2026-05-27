@@ -30,6 +30,12 @@ type AppState struct {
 
 	Breadcrumbs []string
 	KeyHints    []KeyHint
+
+	// SuggestedAWSProfile is set when the active AWS profile and the
+	// kube context's account differ AND ~/.aws/config has a profile
+	// whose sso_account_id matches the cluster account. The header
+	// renders a one-line callout offering the switch on `a`.
+	SuggestedAWSProfile string
 }
 
 // KeyHint is a per-screen key/action pair shown in the header.
