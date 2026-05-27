@@ -265,6 +265,42 @@ func (s *Session) ContextChanged(ctx context.Context) {
 	s.Resolve(ctx)
 }
 
+// ProfileForAccount scans ~/.aws/config and returns the first profile whose
+// `sso_account_id` matches the given account id. Empty string if no
+// matching profile is configured. Used by the header callout that offers
+// a one-keystroke profile switch when the kubectl context's account
+// doesn't match the active AWS session's account.
+func ProfileForAccount(ctx context.Context, account string) string {
+	if account == "" {
+		return ""
+	}
+	// `aws configure list-profiles` is the same source the SSO picker
+	// uses, so we stay consistent. Per-profile lookup follows.
+	listCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(listCtx, "aws", "configure", "list-profiles").Output()
+	if err != nil {
+		return ""
+	}
+	for _, raw := range strings.Split(string(out), "\n") {
+		p := strings.TrimSpace(raw)
+		if p == "" {
+			continue
+		}
+		getCtx, getCancel := context.WithTimeout(ctx, 2*time.Second)
+		acctOut, gerr := exec.CommandContext(getCtx, "aws", "configure", "get",
+			"sso_account_id", "--profile", p).Output()
+		getCancel()
+		if gerr != nil {
+			continue
+		}
+		if strings.TrimSpace(string(acctOut)) == account {
+			return p
+		}
+	}
+	return ""
+}
+
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 // resolveProfile derives the AWS profile from kubeconfig exec env, then
