@@ -102,8 +102,16 @@ func (s *ClusterScreen) Update(msg tea.Msg, app *App) (Screen, tea.Cmd) {
 				break
 			}
 		}
-		// Self-pop — the app will refresh state.
-		return nil, nil
+		// Self-pop AND refresh app state. Without dispatching these the
+		// header keeps showing the old context/account because nothing
+		// else triggers a reload after the cluster switch. The kube
+		// context drives KubeContext/Namespace; switching clusters
+		// usually means a different AWS account too, so revalidate the
+		// session in parallel so the AWS column repaints as well.
+		return nil, tea.Batch(
+			app.loadKubeContext(),
+			app.validateAWSSession(true),
+		)
 
 	case picker.PickerCancelMsg:
 		return nil, nil
