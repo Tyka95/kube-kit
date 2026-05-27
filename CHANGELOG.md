@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.23](https://github.com/Tyka95/kube-kit/compare/v0.1.22...v0.1.23) (2026-05-27)
+
+
+### Features
+
+* **tui:** suggest matching AWS profile on cluster-account mismatch ([c3c82a3](https://github.com/Tyka95/kube-kit/commit/c3c82a377b7757bbc3c3d1f67363febbc75d0acf))
+* **tui:** suggest matching AWS profile on cluster-account mismatch ([6e4b8b0](https://github.com/Tyka95/kube-kit/commit/6e4b8b09a0be4dacb6726acc874d76cfebdd8cdf))
+
 ## [0.1.22](https://github.com/Tyka95/kube-kit/compare/v0.1.21...v0.1.22) (2026-05-27)
 
 
