@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.22](https://github.com/Tyka95/kube-kit/compare/v0.1.21...v0.1.22) (2026-05-27)
+
+
+### Bug Fixes
+
+* self update app state ([8cb99ae](https://github.com/Tyka95/kube-kit/commit/8cb99aef2e1fa3cef7ed9805cda95edb27862b46))
+* self update app state ([9f9b581](https://github.com/Tyka95/kube-kit/commit/9f9b58139a45bb16617c3db272116e46b9e0c8a7))
+
 ## [0.1.21](https://github.com/Tyka95/kube-kit/compare/v0.1.20...v0.1.21) (2026-05-25)
 
 
